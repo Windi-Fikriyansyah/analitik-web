@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import DashboardLayout from '@/components/DashboardLayout';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 export default async function SiteDashboardLayout({
   children,

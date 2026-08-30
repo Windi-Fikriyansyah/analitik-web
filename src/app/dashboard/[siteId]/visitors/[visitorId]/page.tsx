@@ -4,7 +4,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 import { ChevronRight, Smartphone, Monitor, Tablet, CircleAlert, CheckCircle2 } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */

@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 export default async function PagesOverviewPage({ params }: { params: { siteId: string } }) {
   const supabase = getSupabaseServer();

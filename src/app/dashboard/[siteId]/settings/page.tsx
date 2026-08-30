@@ -3,7 +3,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 import TrackingSnippet from '@/components/TrackingSnippet';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 export default async function SettingsPage({ params }: { params: { siteId: string } }) {
   const supabase = getSupabaseServer();

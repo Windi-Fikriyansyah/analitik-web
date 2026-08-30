@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 function formatSeconds(seconds: number) {
   if (!seconds || seconds <= 0) return '0s';

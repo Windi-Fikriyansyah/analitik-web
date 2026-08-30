@@ -3,7 +3,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 import { Gauge, CircleAlert, TriangleAlert, Lightbulb } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30;
 
 const INSIGHTS = [
   { level: "kritis" as const, title: "CTA utama tenggelam di lipatan kedua",

@@ -41,8 +41,8 @@ function LoginForm() {
       return;
     }
 
-    router.push(next);
     router.refresh();
+    router.push(next);
   }
 
   return (

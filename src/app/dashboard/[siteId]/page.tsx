@@ -3,7 +3,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import TrackingSnippet from '@/components/TrackingSnippet';
 import DashboardContent from '@/components/DashboardContent';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 30; // seconds – serve cached pages, refresh data in background
 
 function formatSeconds(seconds: number) {
   if (!seconds) return '0s';
