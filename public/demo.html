@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Demo Landing Page - Visitor Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      margin: 0;
+      color: #1e293b;
+    }
+
+    section {
+      min-height: 90vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 40px;
+      text-align: center;
+    }
+
+    section:nth-child(odd) {
+      background: #f8fafc;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- 1. Replace YOUR_SITE_ID below with a real site_id created in the dashboard -->
+  <script src="http://localhost:3000/tracker.js" data-site-id="d8e1012a-0d2e-4cee-8680-5c7e8de4e332" async></script>
+
+  <div data-lp-section="hero">
+    <section>
+      <h1>Ship Your Product Faster</h1>
+      <p>This is the hero section of a demo landing page.</p>
+    </section>
+  </div>
+
+  <div data-lp-section="benefit">
+    <section>
+      <h1>Why teams choose us</h1>
+      <p>This is the benefit section.</p>
+    </section>
+  </div>
+
+  <div data-lp-section="testimonial">
+    <section>
+      <h1>What our customers say</h1>
+      <p>This is the testimonial section.</p>
+    </section>
+  </div>
+
+  <div data-lp-section="pricing">
+    <section>
+      <h1>Simple pricing</h1>
+      <p>This is the pricing section.</p>
+    </section>
+  </div>
+
+  <div data-lp-section="cta">
+    <section>
+      <h1>Ready to get started?</h1>
+      <button>Sign up now</button>
+    </section>
+  </div>
+
+</body>
+
+</html>
