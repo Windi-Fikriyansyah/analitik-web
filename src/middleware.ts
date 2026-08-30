@@ -25,8 +25,10 @@ export async function middleware(request: NextRequest) {
   );
 
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  const user = session?.user;
 
   const isDashboardRoute = request.nextUrl.pathname.startsWith('/dashboard');
   const isSitesRoute = request.nextUrl.pathname.startsWith('/sites');
