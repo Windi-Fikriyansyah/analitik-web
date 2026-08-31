@@ -8,6 +8,7 @@ import {
 import {
   ArrowUp, ArrowDown, Gauge,
   CircleAlert, TriangleAlert, Lightbulb,
+  Smartphone, Tablet, Monitor,
 } from "lucide-react";
 import { C } from "@/lib/colors";
 
@@ -46,11 +47,13 @@ function ScopeWave() {
 type KpiItem = { label: string; value: string; delta: string; up: boolean };
 type SectionRow = { section_id: string; visitor_count: number; avg_duration: string; pct: number };
 type ButtonRow = { button_id: string; click_count: number; unique_visitors: number; pct: number };
+type DeviceBreakdown = { mobile: number; tablet: number; desktop: number };
 
 export default function DashboardContent({
   siteId,
   totalVisitsFormatted,
   kpis,
+  deviceBreakdown,
   sectionRows,
   buttonRows,
   trafficData,
@@ -59,6 +62,7 @@ export default function DashboardContent({
   siteId: string;
   totalVisitsFormatted: string;
   kpis: KpiItem[];
+  deviceBreakdown: DeviceBreakdown;
   sectionRows: SectionRow[];
   buttonRows: ButtonRow[];
   trafficData: TrafficRow[];
@@ -150,6 +154,48 @@ export default function DashboardContent({
           </div>
         </div>
       </div>
+
+      {/* Device Breakdown */}
+      {(() => {
+        const totalDevices = deviceBreakdown.mobile + deviceBreakdown.tablet + deviceBreakdown.desktop;
+        const maxDevice = Math.max(1, deviceBreakdown.mobile, deviceBreakdown.tablet, deviceBreakdown.desktop);
+        const devices = [
+          { label: "Mobile", count: deviceBreakdown.mobile, icon: Smartphone, color: C.red },
+          { label: "Tablet", count: deviceBreakdown.tablet, icon: Tablet, color: C.brass },
+          { label: "Desktop", count: deviceBreakdown.desktop, icon: Monitor, color: C.moss },
+        ];
+        return (
+          <div style={{ paddingTop: 26 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px" }}>Perangkat Pengunjung</h3>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
+              {devices.map((d) => {
+                const Icon = d.icon;
+                const pct = totalDevices > 0 ? ((d.count / totalDevices) * 100).toFixed(1) : "0";
+                return (
+                  <div key={d.label} style={{
+                    padding: "16px 18px",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 10,
+                    background: "#FDFCF8",
+                  }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                      <Icon size={18} color={d.color} />
+                      <span style={{ fontSize: 13, color: C.muted, fontWeight: 500 }}>{d.label}</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+                      <span className="mono" style={{ fontSize: 24, fontWeight: 700 }}>{d.count.toLocaleString("id-ID")}</span>
+                      <span className="mono" style={{ fontSize: 12.5, color: C.faint }}>{pct}%</span>
+                    </div>
+                    <div style={{ height: 5, background: C.line, borderRadius: 3, overflow: "hidden" }}>
+                      <div style={{ width: `${maxDevice > 0 ? (d.count / maxDevice) * 100 : 0}%`, height: "100%", background: d.color, borderRadius: 3, transition: "width 0.4s ease" }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Tabel halaman */}
       <div style={{ paddingTop: 26 }}>

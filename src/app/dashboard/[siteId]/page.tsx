@@ -167,6 +167,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
       siteId={site.id}
       totalVisitsFormatted={totalVisitors.toLocaleString("id-ID")}
       kpis={kpis}
+      deviceBreakdown={deviceBreakdown}
       sectionRows={sectionRows}
       buttonRows={buttonRows}
       trafficData={trafficData}

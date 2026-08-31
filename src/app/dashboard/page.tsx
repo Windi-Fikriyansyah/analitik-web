@@ -34,6 +34,7 @@ export default async function DashboardIndexPage() {
         siteId="new"
         totalVisitsFormatted="0"
         kpis={emptyKpis}
+        deviceBreakdown={{ mobile: 0, tablet: 0, desktop: 0 }}
         sectionRows={[]}
         buttonRows={[]}
         trafficData={[]}
