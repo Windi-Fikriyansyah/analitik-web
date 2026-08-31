@@ -310,6 +310,23 @@
             button_id: buttonId,
             clicked_at: nowIso()
           });
+
+          // Check if the clicked element is an anchor tag navigating away in the same tab
+          if (target.tagName.toLowerCase() === 'a' && target.href) {
+            var targetAttr = target.getAttribute('target');
+            var isNewTab = targetAttr && targetAttr.toLowerCase() === '_blank';
+            var isHashLink = target.getAttribute('href').startsWith('#');
+
+            if (!isNewTab && !isHashLink) {
+              e.preventDefault(); // Stop immediate navigation
+              flush(true);        // Force send data immediately
+              
+              // Delay navigation by 300ms to ensure data is sent
+              setTimeout(function() {
+                window.location.href = target.href;
+              }, 300);
+            }
+          }
         }
       }
     });
