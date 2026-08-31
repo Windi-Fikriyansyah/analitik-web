@@ -24,7 +24,7 @@ function timeAgo(dateStr: string) {
   if (diffHour < 24) return `${diffHour}h ago`;
   const diffDay = Math.floor(diffHour / 24);
   if (diffDay < 30) return `${diffDay}d ago`;
-  return date.toLocaleDateString();
+  return date.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 function deviceIcon(type: string) {

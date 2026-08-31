@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
-import { ChevronRight, Smartphone, Monitor, Tablet, CircleAlert, CheckCircle2 } from 'lucide-react';
+import { ChevronRight, Smartphone, Monitor, Tablet, CircleAlert, CheckCircle2, MousePointerClick } from 'lucide-react';
 
 export const revalidate = 30;
 
@@ -27,6 +27,7 @@ function formatDate(dateStr: string | null) {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Asia/Jakarta',
   });
 }
 
@@ -41,7 +42,7 @@ function timeAgo(dateStr: string) {
   if (diffHour < 24) return `${diffHour}j yang lalu`;
   const diffDay = Math.floor(diffHour / 24);
   if (diffDay < 30) return `${diffDay}h yang lalu`;
-  return date.toLocaleDateString('id-ID');
+  return date.toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta' });
 }
 
 function DeviceIcon({ type, size = 20 }: { type: string, size?: number }) {
@@ -106,6 +107,12 @@ type SectionViewRow = {
   duration_seconds: number | null;
 };
 
+type ButtonClickRow = {
+  session_id: string;
+  button_id: string;
+  clicked_at: string;
+};
+
 type VisitorRow = {
   id: string;
   device_type: string;
@@ -152,19 +159,35 @@ export default async function VisitorDetailPage({
     .order('started_at', { ascending: false });
   const sessions = (rawSessions ?? []) as SessionRow[];
 
-  const { data: rawSectionViews } = await supabase
-    .from('section_views')
-    .select('session_id, section_id, entered_at, left_at, duration_seconds')
-    .eq('visitor_id', v.id)
-    .eq('site_id', site.id)
-    .order('entered_at', { ascending: true });
+  const [{ data: rawSectionViews }, { data: rawButtonClicks }] = await Promise.all([
+    supabase
+      .from('section_views')
+      .select('session_id, section_id, entered_at, left_at, duration_seconds')
+      .eq('visitor_id', v.id)
+      .eq('site_id', site.id)
+      .order('entered_at', { ascending: true }),
+    supabase
+      .from('button_clicks')
+      .select('session_id, button_id, clicked_at')
+      .eq('visitor_id', v.id)
+      .eq('site_id', site.id)
+      .order('clicked_at', { ascending: true }),
+  ]);
   const sectionViews = (rawSectionViews ?? []) as SectionViewRow[];
+  const buttonClicks = (rawButtonClicks ?? []) as ButtonClickRow[];
 
   const sectionsBySession = new Map<string, SectionViewRow[]>();
   sectionViews.forEach((sv) => {
     const arr = sectionsBySession.get(sv.session_id) ?? [];
     arr.push(sv);
     sectionsBySession.set(sv.session_id, arr);
+  });
+
+  const clicksBySession = new Map<string, ButtonClickRow[]>();
+  buttonClicks.forEach((bc) => {
+    const arr = clicksBySession.get(bc.session_id) ?? [];
+    arr.push(bc);
+    clicksBySession.set(bc.session_id, arr);
   });
 
   const sectionAggregates = new Map<string, { totalDuration: number; viewCount: number }>();
@@ -187,6 +210,16 @@ export default async function VisitorDetailPage({
 
   const maxSectionDuration = Math.max(1, ...sectionList.map((s) => s.total_duration));
 
+  // Button click aggregates
+  const buttonAggregates = new Map<string, number>();
+  buttonClicks.forEach((bc) => {
+    buttonAggregates.set(bc.button_id, (buttonAggregates.get(bc.button_id) ?? 0) + 1);
+  });
+  const buttonList = Array.from(buttonAggregates.entries())
+    .map(([id, count]) => ({ button_id: id, click_count: count }))
+    .sort((a, b) => b.click_count - a.click_count);
+  const maxButtonClicks = Math.max(1, ...buttonList.map((b) => b.click_count));
+
   const totalEngagement = sessions.reduce((sum, s) => {
     if (typeof s.duration_seconds === 'number' && s.duration_seconds >= 0) {
       return sum + s.duration_seconds;
@@ -198,6 +231,7 @@ export default async function VisitorDetailPage({
     { label: "Sesi Aktif", value: sessions.length.toLocaleString() },
     { label: "Durasi Total", value: formatSeconds(totalEngagement) },
     { label: "Bagian Dilihat", value: sectionViews.length.toLocaleString() },
+    { label: "Klik Tombol", value: buttonClicks.length.toLocaleString() },
   ];
 
   return (
@@ -289,6 +323,34 @@ export default async function VisitorDetailPage({
               </div>
             )}
           </div>
+
+          {/* Button Click Summary */}
+          <div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, margin: "0 0 14px" }}>Klik Tombol</h3>
+            {buttonList.length === 0 ? (
+              <p style={{ fontSize: 13, color: C.faint }}>Tidak ada data klik tombol.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {buttonList.map((b) => {
+                  const pct = (b.click_count / maxButtonClicks) * 100;
+                  return (
+                    <div key={b.button_id}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 4 }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                          <MousePointerClick size={13} color={C.red} />
+                          {b.button_id}
+                        </span>
+                        <span style={{ color: C.muted }}>{b.click_count}× klik</span>
+                      </div>
+                      <div style={{ height: 4, background: C.line, borderRadius: 2 }}>
+                        <div style={{ height: '100%', width: `${pct}%`, background: C.red, borderRadius: 2 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* RIGHT: Timeline */}
@@ -348,6 +410,31 @@ export default async function VisitorDetailPage({
                         ))}
                       </div>
                     )}
+
+                    {/* Button Clicks in this session */}
+                    {(() => {
+                      const sClicks = clicksBySession.get(session.id) ?? [];
+                      if (sClicks.length === 0) return null;
+                      return (
+                        <div style={{ borderLeft: `2px solid ${C.line}`, paddingLeft: 16, marginLeft: 14, display: 'flex', flexDirection: 'column', gap: 12, marginTop: sViews.length > 0 ? 12 : 0 }}>
+                          <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', color: C.faint, fontWeight: 700 }}>
+                            Klik Tombol
+                          </div>
+                          {sClicks.map((bc, bcIdx) => (
+                            <div key={bcIdx} style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                              <div style={{ position: 'absolute', left: -21, top: 5, width: 8, height: 8, borderRadius: '50%', background: C.paper, border: `2px solid ${C.red}` }} />
+                              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 500, color: C.ink }}>
+                                <MousePointerClick size={12} color={C.red} />
+                                {bc.button_id}
+                              </span>
+                              <span className="mono" style={{ fontSize: 11.5, color: C.muted }}>
+                                {formatDate(bc.clicked_at)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}

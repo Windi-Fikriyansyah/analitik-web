@@ -99,7 +99,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
   for (let i = 13; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short' });
+    const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
     if (!trafficMap.has(display)) {
        trafficMap.set(display, { visits: 0, conv: 0 });
     }
@@ -108,7 +108,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
   (visitors ?? []).forEach(v => {
     if (v.first_seen) {
       const d = new Date(v.first_seen);
-      const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short' });
+      const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
       const entry = trafficMap.get(display);
       if (entry) entry.visits += 1;
     }
@@ -117,7 +117,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
   (sessions ?? []).forEach(s => {
     if (s.started_at) {
       const d = new Date(s.started_at);
-      const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short' });
+      const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });
       const entry = trafficMap.get(display);
       // Asumsi konversi jika durasi > 5 detik
       if (entry && typeof s.duration_seconds === 'number' && s.duration_seconds > 5) {
