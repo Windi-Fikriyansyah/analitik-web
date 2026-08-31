@@ -24,7 +24,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
 
   if (!site) notFound();
 
-  const [{ data: visitors }, { data: sessions }, { data: sections }] = await Promise.all([
+  const [{ data: visitors }, { data: sessions }, { data: sections }, { data: buttonClicks }] = await Promise.all([
     supabase.from('visitors').select('id, device_type, first_seen').eq('site_id', site.id),
     supabase.from('sessions').select('duration_seconds, started_at').eq('site_id', site.id),
     supabase
@@ -32,6 +32,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
       .select('section_id, visitor_count, avg_duration_seconds, avg_entry_offset_seconds')
       .eq('site_id', site.id)
       .order('avg_entry_offset_seconds', { ascending: true }),
+    supabase.from('button_clicks').select('button_id, visitor_id').eq('site_id', site.id),
   ]);
 
   const totalVisitors = visitors?.length ?? 0;
@@ -72,6 +73,25 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
     avg_duration: formatSeconds(Number(s.avg_duration_seconds ?? 0)),
     pct: (s.visitor_count / maxSectionVisitors) * 100,
   }));
+
+  const buttonStatsMap = new Map<string, { totalClicks: number, uniqueVisitors: Set<string> }>();
+  (buttonClicks ?? []).forEach(b => {
+    if (!buttonStatsMap.has(b.button_id)) {
+      buttonStatsMap.set(b.button_id, { totalClicks: 0, uniqueVisitors: new Set() });
+    }
+    const stat = buttonStatsMap.get(b.button_id)!;
+    stat.totalClicks += 1;
+    stat.uniqueVisitors.add(b.visitor_id);
+  });
+
+  const maxButtonClicks = Math.max(1, ...(Array.from(buttonStatsMap.values()).map(s => s.totalClicks)));
+
+  const buttonRows = Array.from(buttonStatsMap.entries()).map(([button_id, stat]) => ({
+    button_id,
+    click_count: stat.totalClicks,
+    unique_visitors: stat.uniqueVisitors.size,
+    pct: (stat.totalClicks / maxButtonClicks) * 100,
+  })).sort((a, b) => b.click_count - a.click_count);
 
   // Generate Traffic data for last 14 days
   const trafficMap = new Map<string, { visits: number, conv: number }>();
@@ -148,6 +168,7 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
       totalVisitsFormatted={totalVisitors.toLocaleString("id-ID")}
       kpis={kpis}
       sectionRows={sectionRows}
+      buttonRows={buttonRows}
       trafficData={trafficData}
       insightsData={insightsData}
     />

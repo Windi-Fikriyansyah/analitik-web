@@ -35,6 +35,7 @@ export default async function DashboardIndexPage() {
         totalVisitsFormatted="0"
         kpis={emptyKpis}
         sectionRows={[]}
+        buttonRows={[]}
         trafficData={[]}
         insightsData={[]}
       />

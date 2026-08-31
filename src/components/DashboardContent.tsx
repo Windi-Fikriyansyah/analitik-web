@@ -45,12 +45,14 @@ function ScopeWave() {
 
 type KpiItem = { label: string; value: string; delta: string; up: boolean };
 type SectionRow = { section_id: string; visitor_count: number; avg_duration: string; pct: number };
+type ButtonRow = { button_id: string; click_count: number; unique_visitors: number; pct: number };
 
 export default function DashboardContent({
   siteId,
   totalVisitsFormatted,
   kpis,
   sectionRows,
+  buttonRows,
   trafficData,
   insightsData,
 }: {
@@ -58,6 +60,7 @@ export default function DashboardContent({
   totalVisitsFormatted: string;
   kpis: KpiItem[];
   sectionRows: SectionRow[];
+  buttonRows: ButtonRow[];
   trafficData: TrafficRow[];
   insightsData: InsightRow[];
 }) {
@@ -188,6 +191,55 @@ export default function DashboardContent({
                     </td>
                     <td className="mono" style={{ padding: "13px 0", whiteSpace: "nowrap", color: C.muted }}>
                       {s.avg_duration}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Tabel Tombol */}
+      <div style={{ paddingTop: 26 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 6 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Klik Tombol</h3>
+          <span style={{ fontSize: 12.5, color: C.faint }}>{buttonRows.length} tombol dilacak</span>
+        </div>
+        <div className="table-scroll">
+          <table className="pages-table">
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${C.line}` }}>
+                {["Tombol (ID)", "Total Klik", "Pengunjung Unik"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "0 0 10px", fontSize: 11.5, color: C.faint, fontWeight: 500, whiteSpace: "nowrap" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {buttonRows.length === 0 ? (
+                <tr>
+                  <td colSpan={3} style={{ padding: '24px 0', color: C.faint, fontSize: 13, textAlign: 'center' }}>
+                    Belum ada data klik. Pasang atribut data-lp-button pada tombol Anda.
+                  </td>
+                </tr>
+              ) : (
+                buttonRows.map((b) => (
+                  <tr key={b.button_id} className="rowline" style={{ borderBottom: `1px solid ${C.line}` }}>
+                    <td style={{ padding: "13px 20px 13px 0", fontWeight: 600 }}>
+                      {b.button_id}
+                    </td>
+                    <td style={{ padding: "13px 20px 13px 0", minWidth: 150 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <span className="mono" style={{ whiteSpace: "nowrap", width: 45 }}>{b.click_count.toLocaleString("id-ID")}</span>
+                        <div style={{ flex: 1, height: 6, background: C.line, borderRadius: 3, overflow: 'hidden' }}>
+                          <div style={{ width: `${b.pct}%`, height: '100%', background: C.moss, borderRadius: 3 }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td className="mono" style={{ padding: "13px 0", whiteSpace: "nowrap", color: C.muted }}>
+                      {b.unique_visitors.toLocaleString("id-ID")}
                     </td>
                   </tr>
                 ))
