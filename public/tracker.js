@@ -302,32 +302,57 @@
     // ---------------------------------------------------------------
     document.addEventListener('click', function (e) {
       var target = e.target.closest('[data-lp-button]');
-      if (target) {
-        var buttonId = target.getAttribute('data-lp-button');
-        if (buttonId) {
-          enqueue({
-            type: 'button_click',
-            button_id: buttonId,
-            clicked_at: nowIso()
-          });
+      if (!target) return;
 
-          // Check if the clicked element is an anchor tag navigating away in the same tab
-          if (target.tagName.toLowerCase() === 'a' && target.href) {
-            var targetAttr = target.getAttribute('target');
-            var isNewTab = targetAttr && targetAttr.toLowerCase() === '_blank';
-            var isHashLink = target.getAttribute('href').startsWith('#');
+      var buttonId = target.getAttribute('data-lp-button');
+      if (!buttonId) return;
 
-            if (!isNewTab && !isHashLink) {
-              e.preventDefault(); // Stop immediate navigation
-              flush(true);        // Force send data immediately
-              
-              // Delay navigation by 300ms to ensure data is sent
-              setTimeout(function() {
-                window.location.href = target.href;
-              }, 300);
-            }
-          }
-        }
+      console.log('[tracker.js] Button click detected:', buttonId);
+
+      var clickEvent = {
+        type: 'button_click',
+        button_id: buttonId,
+        clicked_at: nowIso()
+      };
+
+      // Check if the clicked element is an anchor tag navigating away in the same tab
+      var isAnchor = target.tagName.toLowerCase() === 'a' && target.href;
+      var targetAttr = isAnchor ? target.getAttribute('target') : null;
+      var isNewTab = targetAttr && targetAttr.toLowerCase() === '_blank';
+      var isHashLink = isAnchor && target.getAttribute('href').startsWith('#');
+      var willNavigate = isAnchor && !isNewTab && !isHashLink;
+
+      if (willNavigate) {
+        // For links that navigate in the same tab, we must send the data
+        // BEFORE the browser leaves the page.
+        e.preventDefault();
+        var href = target.href;
+
+        // Add the click event to the queue then flush everything
+        enqueue(clickEvent);
+        flush(true);
+
+        console.log('[tracker.js] Data flushed, navigating to:', href);
+
+        // Also fire a direct fetch as backup (keepalive survives page unload)
+        try {
+          var directPayload = JSON.stringify(buildPayload([clickEvent]));
+          fetch(TRACK_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: directPayload,
+            keepalive: true
+          }).catch(function() {});
+        } catch(ex) {}
+
+        // Navigate after a short delay to let the requests complete
+        setTimeout(function() {
+          window.location.href = href;
+        }, 350);
+      } else {
+        // For buttons, new-tab links, or hash links — just enqueue normally
+        enqueue(clickEvent);
+        console.log('[tracker.js] Click event enqueued for:', buttonId);
       }
     });
 
