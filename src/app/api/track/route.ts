@@ -44,16 +44,18 @@ type TrackPayload = {
 const ALLOWED_DEVICE_TYPES = new Set(['mobile', 'tablet', 'desktop']);
 const MAX_EVENTS_PER_BATCH = 100;
 
-function corsHeaders() {
+function corsHeaders(req?: NextRequest) {
+  const origin = req?.headers.get('origin') ?? '*';
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': origin === '*' ? '*' : origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Credentials': 'true',
   };
 }
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+export async function OPTIONS(req: NextRequest) {
+  return new NextResponse(null, { status: 204, headers: corsHeaders(req) });
 }
 
 function getClientIp(req: NextRequest): string {
@@ -62,8 +64,8 @@ function getClientIp(req: NextRequest): string {
   return req.headers.get('x-real-ip') ?? 'unknown';
 }
 
-function badRequest(message: string) {
-  return NextResponse.json({ error: message }, { status: 400, headers: corsHeaders() });
+function badRequest(req: NextRequest, message: string) {
+  return NextResponse.json({ error: message }, { status: 400, headers: corsHeaders(req) });
 }
 
 export async function POST(req: NextRequest) {
@@ -71,29 +73,29 @@ export async function POST(req: NextRequest) {
   try {
     payload = await req.json();
   } catch {
-    return badRequest('Invalid JSON body');
+    return badRequest(req, 'Invalid JSON body');
   }
 
   const { site_id, visitor_id, device, session, events } = payload ?? {};
 
   // ---- 1. Structural validation --------------------------------------
-  if (!isValidUuid(site_id)) return badRequest('Invalid or missing site_id');
-  if (!isValidUuid(visitor_id)) return badRequest('Invalid or missing visitor_id');
-  if (!session || !isValidUuid(session.id)) return badRequest('Invalid or missing session.id');
+  if (!isValidUuid(site_id)) return badRequest(req, 'Invalid or missing site_id');
+  if (!isValidUuid(visitor_id)) return badRequest(req, 'Invalid or missing visitor_id');
+  if (!session || !isValidUuid(session.id)) return badRequest(req, 'Invalid or missing session.id');
   if (!device || !ALLOWED_DEVICE_TYPES.has(device.device_type)) {
-    return badRequest('Invalid or missing device.device_type');
+    return badRequest(req, 'Invalid or missing device.device_type');
   }
   if (!Array.isArray(events) || events.length === 0) {
-    return badRequest('events must be a non-empty array');
+    return badRequest(req, 'events must be a non-empty array');
   }
   if (events.length > MAX_EVENTS_PER_BATCH) {
-    return badRequest(`Too many events in one batch (max ${MAX_EVENTS_PER_BATCH})`);
+    return badRequest(req, `Too many events in one batch (max ${MAX_EVENTS_PER_BATCH})`);
   }
 
   // ---- 2. Tenant isolation: site_id must exist ------------------------
   const validSite = await siteExists(site_id);
   if (!validSite) {
-    return NextResponse.json({ error: 'Unknown site_id' }, { status: 404, headers: corsHeaders() });
+    return NextResponse.json({ error: 'Unknown site_id' }, { status: 404, headers: corsHeaders(req) });
   }
 
   // ---- 3. Rate limiting (per tenant + per client IP) ------------------
@@ -102,7 +104,7 @@ export async function POST(req: NextRequest) {
   if (!allowed) {
     return NextResponse.json(
       { error: 'Rate limit exceeded' },
-      { status: 429, headers: corsHeaders() }
+      { status: 429, headers: corsHeaders(req) }
     );
   }
 
@@ -126,7 +128,7 @@ export async function POST(req: NextRequest) {
   );
   if (visitorError) {
     console.error('visitor upsert failed', visitorError);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: corsHeaders() });
+    return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: corsHeaders(req) });
   }
 
   // ---- 5. Upsert session (created on first batch, updated afterwards) --
@@ -144,7 +146,7 @@ export async function POST(req: NextRequest) {
   );
   if (sessionError) {
     console.error('session upsert failed', sessionError);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: corsHeaders() });
+    return NextResponse.json({ error: 'Internal error' }, { status: 500, headers: corsHeaders(req) });
   }
 
   // ---- 6. Process the batched events -----------------------------------
@@ -244,5 +246,5 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true }, { status: 202, headers: corsHeaders() });
+  return NextResponse.json({ ok: true }, { status: 202, headers: corsHeaders(req) });
 }
