@@ -42,3 +42,35 @@ export async function DELETE(_req: NextRequest, { params }: { params: { siteId: 
 
   return NextResponse.json({ ok: true });
 }
+
+export async function PATCH(req: NextRequest, { params }: { params: { siteId: string } }) {
+  if (!isValidUuid(params.siteId)) {
+    return NextResponse.json({ error: 'Invalid site id' }, { status: 400 });
+  }
+
+  const supabase = getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  let body: { name?: string; domain?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
+  }
+
+  const updateData: { name?: string; domain?: string } = {};
+  if (body.name !== undefined) updateData.name = body.name.trim();
+  if (body.domain !== undefined) updateData.domain = body.domain.trim();
+
+  const { error } = await supabase
+    .from('sites')
+    .update(updateData)
+    .eq('id', params.siteId);
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true });
+}

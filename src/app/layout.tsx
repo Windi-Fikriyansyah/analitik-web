@@ -4,8 +4,8 @@ import './globals.css';
 import NavigationLoader from '@/components/NavigationLoader';
 
 export const metadata: Metadata = {
-  title: 'Visitor Tracker - Landing Page Analytics',
-  description: 'Track visitors, devices, and section-by-section engagement on any landing page.',
+  title: 'Sinyal — Tahu Persis Kenapa Pengunjung Pergi Tanpa Konversi',
+  description: 'Analisa perilaku pengunjung landing page per bagian, lacak klik tombol, dan dapatkan saran perbaikan dari AI untuk meningkatkan konversi. Setup 30 detik, tanpa cookie.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
