@@ -3,6 +3,7 @@ import { getSupabaseServer } from '@/lib/supabaseServer';
 import { C } from '@/lib/colors';
 import TrackingSnippet from '@/components/TrackingSnippet';
 import SiteSettingsForm from '@/components/SiteSettingsForm';
+import DeleteSiteButton from '@/components/DeleteSiteButton';
 
 export const revalidate = 30;
 
@@ -42,6 +43,8 @@ export default async function SettingsPage({ params }: { params: { siteId: strin
           </p>
           <TrackingSnippet siteId={site.id} />
         </div>
+
+        <DeleteSiteButton siteId={site.id} />
       </div>
     </div>
   );
