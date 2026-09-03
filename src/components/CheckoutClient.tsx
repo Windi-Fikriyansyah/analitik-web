@@ -102,11 +102,11 @@ export default function CheckoutClient({
   return (
     <>
       <nav aria-label="Alur Pembelian" className="mb-8 border-b border-surface-container-highest pb-4">
-        <ol className="flex items-center gap-3 text-label-md font-label-md">
-          <li className="flex items-center gap-2 text-secondary">
+        <ol className="flex flex-wrap items-center gap-2 md:gap-3 text-[11px] md:text-label-md font-label-md">
+          <li className="flex items-center gap-1.5 md:gap-2 text-secondary">
             <span className="flex items-center gap-1.5 opacity-50">
-              <span className="w-5 h-5 rounded-full border border-secondary flex items-center justify-center text-[11px]">
-                <span className="material-symbols-outlined text-[14px]">check</span>
+              <span className="w-4 h-4 md:w-5 md:h-5 rounded-full border border-secondary flex items-center justify-center text-[9px] md:text-[11px]">
+                <span className="material-symbols-outlined text-[12px] md:text-[14px]">check</span>
               </span>
               <span>Pilih Paket</span>
             </span>
@@ -115,29 +115,29 @@ export default function CheckoutClient({
           
           {!invoice.payment_number ? (
             <>
-              <li aria-current="step" className="flex items-center gap-2 text-primary font-semibold border-b border-primary pb-0.5">
-                <span className="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[11px]">2</span>
+              <li aria-current="step" className="flex items-center gap-1.5 md:gap-2 text-primary font-semibold border-b border-primary pb-0.5">
+                <span className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] md:text-[11px]">2</span>
                 <span>Pembayaran</span>
               </li>
               <li className="text-secondary">/</li>
-              <li className="flex items-center gap-2 text-secondary opacity-50">
-                <span className="w-5 h-5 rounded-full border border-secondary flex items-center justify-center text-[11px]">3</span>
+              <li className="flex items-center gap-1.5 md:gap-2 text-secondary opacity-50">
+                <span className="w-4 h-4 md:w-5 md:h-5 rounded-full border border-secondary flex items-center justify-center text-[9px] md:text-[11px]">3</span>
                 <span>Konfirmasi</span>
               </li>
             </>
           ) : (
             <>
-              <li className="flex items-center gap-2 text-secondary">
+              <li className="flex items-center gap-1.5 md:gap-2 text-secondary">
                 <span className="flex items-center gap-1.5 opacity-50">
-                  <span className="w-5 h-5 rounded-full border border-secondary flex items-center justify-center text-[11px]">
-                    <span className="material-symbols-outlined text-[14px]">check</span>
+                  <span className="w-4 h-4 md:w-5 md:h-5 rounded-full border border-secondary flex items-center justify-center text-[9px] md:text-[11px]">
+                    <span className="material-symbols-outlined text-[12px] md:text-[14px]">check</span>
                   </span>
                   <span>Pembayaran</span>
                 </span>
               </li>
               <li className="text-secondary">/</li>
-              <li aria-current="step" className="flex items-center gap-2 text-primary font-semibold border-b border-primary pb-0.5">
-                <span className="w-5 h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[11px]">3</span>
+              <li aria-current="step" className="flex items-center gap-1.5 md:gap-2 text-primary font-semibold border-b border-primary pb-0.5">
+                <span className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-primary text-on-primary flex items-center justify-center text-[9px] md:text-[11px]">3</span>
                 <span>Konfirmasi</span>
               </li>
             </>
@@ -149,7 +149,7 @@ export default function CheckoutClient({
         <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-surface-container-highest pb-6 gap-2">
           <div>
             <span className="text-caption font-caption text-secondary uppercase tracking-wider">Pembayaran Langganan</span>
-            <h2 className="font-headline-md text-[24px] text-on-surface mt-1">Konfirmasi & Metode Pembayaran</h2>
+            <h2 className="font-headline-md text-[20px] md:text-[24px] text-on-surface mt-1">Konfirmasi & Metode Pembayaran</h2>
           </div>
           <div className="flex items-center gap-1.5 text-caption font-caption text-secondary">
             <span className="material-symbols-outlined text-[16px] text-primary">lock</span>
@@ -244,19 +244,19 @@ export default function CheckoutClient({
                       <div className="mb-4 text-caption font-caption text-secondary uppercase tracking-wider">
                         Nomor Virtual Account
                       </div>
-                      <div className="flex items-center gap-2">
-                        <div className="bg-white px-6 py-4 rounded-lg border border-surface-container-highest shadow-sm font-headline-lg font-bold tracking-widest text-on-surface text-[24px]">
+                      <div className="flex flex-col sm:flex-row items-center gap-2 w-full max-w-full overflow-hidden">
+                        <div className="bg-white px-4 md:px-6 py-3 md:py-4 rounded-lg border border-surface-container-highest shadow-sm font-headline-lg font-bold tracking-widest text-on-surface text-[18px] md:text-[24px] w-full text-center overflow-x-auto">
                           {invoice.payment_number}
                         </div>
                         <button 
                           onClick={handleCopy}
-                          className="p-4 rounded-lg border border-surface-container-highest bg-white hover:bg-surface-container-low transition-colors text-secondary flex items-center justify-center shadow-sm"
+                          className="w-full sm:w-auto p-3 md:p-4 rounded-lg border border-surface-container-highest bg-white hover:bg-surface-container-low transition-colors text-secondary flex items-center justify-center shadow-sm shrink-0"
                           title="Salin nomor"
                         >
                           {isCopied ? (
-                            <span className="material-symbols-outlined text-primary text-[24px]">check</span>
+                            <span className="material-symbols-outlined text-primary text-[20px] md:text-[24px]">check</span>
                           ) : (
-                            <span className="material-symbols-outlined text-[24px]">content_copy</span>
+                            <span className="material-symbols-outlined text-[20px] md:text-[24px]">content_copy</span>
                           )}
                         </button>
                       </div>
@@ -266,8 +266,8 @@ export default function CheckoutClient({
                     </div>
                   )}
                   
-                  <div className="mt-6 flex items-center justify-center gap-2 text-[13px] text-primary font-medium bg-primary-fixed bg-opacity-20 py-2 px-4 rounded-lg border border-primary-fixed">
-                    <span className="material-symbols-outlined text-[16px] animate-spin">refresh</span>
+                  <div className="mt-6 flex items-center justify-center gap-2 text-[11px] md:text-[13px] text-primary font-medium bg-primary-fixed bg-opacity-20 py-2 px-3 md:px-4 rounded-lg border border-primary-fixed w-full text-center">
+                    <span className="material-symbols-outlined text-[14px] md:text-[16px] animate-spin shrink-0">refresh</span>
                     Menunggu pembayaran... (Otomatis memuat ulang)
                   </div>
                 </div>
@@ -284,11 +284,11 @@ export default function CheckoutClient({
                 <span>Biaya Layanan</span>
                 <span className="text-on-surface font-medium">Rp {adminFee.toLocaleString('id-ID')}</span>
               </div>
-              <div className="flex justify-between items-baseline pt-4 border-t border-surface-container-highest text-on-surface">
-                <span className="font-headline-md text-[20px]">Total</span>
-                <div className="text-right">
-                  <span className="font-headline-lg text-[36px] font-semibold tracking-tight text-on-surface block">Rp {totalAmount.toLocaleString('id-ID')}</span>
-                  <span className="text-caption font-caption text-secondary">Termasuk biaya gateway</span>
+              <div className="flex flex-col sm:flex-row justify-between sm:items-baseline pt-4 border-t border-surface-container-highest text-on-surface gap-2 sm:gap-0">
+                <span className="font-headline-md text-[18px] md:text-[20px]">Total</span>
+                <div className="text-left sm:text-right">
+                  <span className="font-headline-lg text-[28px] md:text-[36px] font-semibold tracking-tight text-on-surface block leading-none">Rp {totalAmount.toLocaleString('id-ID')}</span>
+                  <span className="text-caption font-caption text-secondary mt-1 block">Termasuk biaya gateway</span>
                 </div>
               </div>
             </div>
