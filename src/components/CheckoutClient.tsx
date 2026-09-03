@@ -31,7 +31,16 @@ export default function CheckoutClient({
   const [invoice, setInvoice] = useState<Invoice>(initialInvoice);
   const [selectedMethod, setSelectedMethod] = useState<string>('qris');
   const [loading, setLoading] = useState(false);
+  const [isCopied, setIsCopied] = useState(false);
   const supabase = getSupabaseBrowser();
+
+  const handleCopy = () => {
+    if (invoice.payment_number) {
+      navigator.clipboard.writeText(invoice.payment_number);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    }
+  };
 
   const getAdminFee = (methodId: string, baseAmount: number) => {
     if (!methodId) return 0;
@@ -235,8 +244,21 @@ export default function CheckoutClient({
                       <div className="mb-4 text-caption font-caption text-secondary uppercase tracking-wider">
                         Nomor Virtual Account
                       </div>
-                      <div className="bg-white px-6 py-4 rounded-lg border border-surface-container-highest inline-block shadow-sm font-headline-lg font-bold tracking-widest text-on-surface text-[24px]">
-                        {invoice.payment_number}
+                      <div className="flex items-center gap-2">
+                        <div className="bg-white px-6 py-4 rounded-lg border border-surface-container-highest shadow-sm font-headline-lg font-bold tracking-widest text-on-surface text-[24px]">
+                          {invoice.payment_number}
+                        </div>
+                        <button 
+                          onClick={handleCopy}
+                          className="p-4 rounded-lg border border-surface-container-highest bg-white hover:bg-surface-container-low transition-colors text-secondary flex items-center justify-center shadow-sm"
+                          title="Salin nomor"
+                        >
+                          {isCopied ? (
+                            <span className="material-symbols-outlined text-primary text-[24px]">check</span>
+                          ) : (
+                            <span className="material-symbols-outlined text-[24px]">content_copy</span>
+                          )}
+                        </button>
                       </div>
                       <div className="text-[13px] text-secondary mt-3">
                         Salin nomor di atas dan bayar melalui ATM/Internet Banking Anda.
