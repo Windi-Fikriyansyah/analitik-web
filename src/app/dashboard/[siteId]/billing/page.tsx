@@ -30,27 +30,27 @@ export default async function BillingPage({ params }: { params: { siteId: string
   const plans = [
     {
       name: "Free", price: "Rp0", amount: 0,
-      features: ["1.000 Visitor/bln", "1 Landing Page", "Retensi 7 hari", "Basic analytics"],
+      features: ["1.000 Visitor/bln", "1 Landing Page", "Retensi 7 hari", "1 Analisa AI/bulan", "Basic analytics"],
       cta: currentPlan === 'Free' ? "Paket Saat Ini" : "Upgrade ke Free", popular: false, current: currentPlan === 'Free',
     },
     {
       name: "Starter", price: "Rp49rb", amount: 49000,
-      features: ["5.000 Visitor/bln", "3 Landing Page", "Retensi 30 hari", "Visitor, session, device, section"],
+      features: ["5.000 Visitor/bln", "3 Landing Page", "Retensi 30 hari", "10 Analisa AI/bulan", "Visitor, session, device, section"],
       cta: currentPlan === 'Starter' ? "Paket Saat Ini" : "Upgrade ke Starter", popular: false, current: currentPlan === 'Starter',
     },
     {
       name: "Growth", price: "Rp99rb", amount: 99000,
-      features: ["15.000 Visitor/bln", "10 Landing Page", "Retensi 90 hari", "Semua Starter + funnel + heatmap sederhana"],
+      features: ["15.000 Visitor/bln", "10 Landing Page", "Retensi 90 hari", "40 Analisa AI/bulan", "Semua Starter + funnel + heatmap"],
       cta: currentPlan === 'Growth' ? "Paket Saat Ini" : "Upgrade ke Growth", popular: true, current: currentPlan === 'Growth',
     },
     {
       name: "Business", price: "Rp199rb", amount: 199000,
-      features: ["50.000 Visitor/bln", "30 Landing Page", "Retensi 180 hari", "Semua Growth + conversion tracking + export"],
+      features: ["50.000 Visitor/bln", "30 Landing Page", "Retensi 180 hari", "150 Analisa AI/bulan", "Semua Growth + conversion tracking"],
       cta: currentPlan === 'Business' ? "Paket Saat Ini" : "Upgrade ke Business", popular: false, current: currentPlan === 'Business',
     },
     {
       name: "Pro", price: "Rp399rb", amount: 399000,
-      features: ["150.000 Visitor/bln", "100 Landing Page", "Retensi 1 tahun", "Semua Business + advanced analytics + AI insight"],
+      features: ["150.000 Visitor/bln", "100 Landing Page", "Retensi 1 tahun", "500 Analisa AI/bulan", "Semua Business + advanced analytics"],
       cta: currentPlan === 'Pro' ? "Paket Saat Ini" : "Upgrade ke Pro", popular: false, current: currentPlan === 'Pro',
     },
   ];

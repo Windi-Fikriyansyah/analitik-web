@@ -363,6 +363,7 @@ create table if not exists user_subscriptions (
   user_id                uuid primary key references auth.users(id) on delete cascade,
   plan_name              text not null default 'Free' check (plan_name in ('Free', 'Starter', 'Growth', 'Business', 'Pro')),
   monthly_visitor_count  int not null default 0,
+  monthly_ai_analysis_count int not null default 0,
   billing_cycle_start    timestamptz not null default now(),
   billing_cycle_end      timestamptz not null default now() + interval '1 month',
   created_at             timestamptz not null default now(),
@@ -503,3 +504,15 @@ select cron.schedule(
   '0 0 * * *', 
   $$ select public.delete_old_tracking_data(); $$
 );
+
+-- ---------------------------------------------------------
+-- RPC: Increment AI Analysis Count
+-- ---------------------------------------------------------
+create or replace function public.increment_ai_analysis(user_id_param uuid)
+returns void as $$
+begin
+  update public.user_subscriptions
+  set monthly_ai_analysis_count = monthly_ai_analysis_count + 1
+  where user_id = user_id_param;
+end;
+$$ language plpgsql security definer;

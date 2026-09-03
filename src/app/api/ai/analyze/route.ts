@@ -233,6 +233,35 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Site not found' }, { status: 404 });
   }
 
+  // 3b. Check AI Analysis Limit
+  const { data: sub } = await supabase
+    .from('user_subscriptions')
+    .select('plan_name, monthly_ai_analysis_count')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!sub) {
+    return NextResponse.json({ error: 'Subscription not found' }, { status: 400 });
+  }
+
+  const aiLimits: Record<string, number> = {
+    'Free': 1,
+    'Starter': 10,
+    'Growth': 40,
+    'Business': 150,
+    'Pro': 500
+  };
+  const currentPlan = sub.plan_name || 'Free';
+  const limit = aiLimits[currentPlan] || 1;
+  const currentCount = sub.monthly_ai_analysis_count || 0;
+
+  if (currentCount >= limit) {
+    return NextResponse.json(
+      { error: `Batas analisa AI bulanan Anda telah tercapai untuk paket ${currentPlan} (${limit} analisa/bulan). Silakan upgrade paket Anda.` },
+      { status: 403 }
+    );
+  }
+
   // 4. Check OpenAI API key
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -401,53 +430,57 @@ export async function POST(req: NextRequest) {
 
   const hasPageContent = !!pageContent;
 
-  const systemPrompt = `Kamu adalah seorang ahli CRO (Conversion Rate Optimization) dan landing page analyst berpengalaman.
+  const systemPrompt = `Kamu adalah konsultan CRO (Conversion Rate Optimization) kelas dunia dengan pengalaman 15+ tahun mengoptimasi landing page untuk brand-brand besar di Indonesia dan Asia Tenggara.
 
 Tugasmu:
-1. Menganalisa data analitik landing page yang diberikan
-2. ${hasPageContent ? 'Menganalisa konten dan struktur ACTUAL dari landing page yang telah di-scrape' : 'Menemukan masalah berdasarkan pola perilaku pengunjung'}
-3. Menemukan masalah dan peluang yang mempengaruhi konversi
-4. Memberikan saran perbaikan yang SPESIFIK dan ACTIONABLE untuk meningkatkan conversion rate
+1. Menganalisa data analitik landing page yang diberikan secara MENDALAM
+2. ${hasPageContent ? 'Menganalisa konten, struktur, copywriting, dan UX ACTUAL dari landing page yang telah di-scrape' : 'Menemukan masalah berdasarkan pola perilaku pengunjung'}
+3. Menemukan AKAR MASALAH (root cause) yang mempengaruhi konversi — bukan hanya gejalanya
+4. Memberikan saran perbaikan yang SANGAT SPESIFIK, ACTIONABLE, dan TERUKUR
 
-PENTING:
-- Analisa harus berdasarkan DATA NYATA yang diberikan, bukan asumsi
-- ${hasPageContent ? 'Kamu memiliki akses ke KONTEN ACTUAL landing page — gunakan ini untuk memberikan saran yang SANGAT SPESIFIK. Misalnya: sarankan perubahan headline tertentu, perbaikan teks CTA, penambahan elemen yang hilang, dll.' : 'Domain tidak tersedia atau gagal diakses. Analisa berdasarkan data analitik saja.'}
-- ${hasPageContent ? 'Komentari kualitas headline, copywriting, CTA, struktur halaman, dan elemen konversi berdasarkan konten yang kamu lihat' : ''}
-- Saran harus praktis dan bisa langsung diterapkan
-- Gunakan Bahasa Indonesia yang profesional
-- Jika data terlalu sedikit, tetap berikan analisa sebaik mungkin dengan catatan bahwa diperlukan lebih banyak data
+ATURAN ANALISA:
+- Analisa harus 100% berdasarkan DATA NYATA yang diberikan, bukan asumsi generik
+- ${hasPageContent ? 'Kamu memiliki akses ke KONTEN ACTUAL landing page — WAJIB gunakan ini untuk memberikan saran yang SANGAT SPESIFIK. Misalnya: kutip headline yang lemah lalu tulis ulang, kutip CTA yang tidak menarik lalu sarankan alternatif, identifikasi bagian yang membosankan berdasarkan durasi baca' : 'Domain tidak tersedia atau gagal diakses. Analisa berdasarkan data analitik saja.'}
+- ${hasPageContent ? 'Evaluasi: (a) Kekuatan headline — apakah menjawab pain point? (b) Kejelasan value proposition, (c) Urgensi & scarcity, (d) Social proof & trust signals, (e) Kualitas CTA — apakah spesifik atau generik?, (f) Alur narasi dari atas ke bawah, (g) Kesesuaian dengan perangkat mobile vs desktop' : ''}
+- Untuk setiap masalah, jelaskan MENGAPA itu masalah berdasarkan prinsip psikologi konversi (anchoring, loss aversion, social proof, cognitive load, dll.)
+- Setiap rekomendasi HARUS menyertakan contoh teks/elemen spesifik yang bisa langsung di-copy-paste oleh pengguna
+- Jika bounce rate tinggi, jelaskan kemungkinan penyebab spesifik berdasarkan data section funnel
+- Jika ada section dengan drop-off besar, identifikasi apa yang salah di section tersebut
+- Analisa click-through rate setiap tombol dan bandingkan dengan benchmark industri (rata-rata CTR CTA landing page: 3-5%)
+- Gunakan Bahasa Indonesia yang profesional namun mudah dipahami non-teknis
+- Jika data terlalu sedikit (<50 visitor), tetap berikan analisa terbaik dengan disclaimer
 
-Berikan response dalam format JSON EXACT seperti ini (tanpa markdown code block, langsung JSON):
+FORMAT RESPONSE — JSON EXACT (tanpa markdown code block, langsung JSON):
 {
-  "conversionScore": <number 0-100, estimasi kualitas konversi berdasarkan metrik${hasPageContent ? ' DAN kualitas konten halaman' : ''}>,
-  "summary": "<ringkasan singkat performa landing page dalam 2-3 kalimat${hasPageContent ? ', termasuk evaluasi konten dan copywriting' : ''}>",
+  "conversionScore": <number 0-100, estimasi kualitas konversi>,
+  "summary": "<ringkasan performa dalam 3-4 kalimat. Sebutkan angka spesifik dari data. ${hasPageContent ? 'Evaluasi kualitas keseluruhan konten dan copywriting.' : ''}>",
   "insights": [
     {
       "level": "<kritis|peringatan|peluang>",
-      "title": "<judul temuan singkat>",
-      "desc": "<deskripsi detail temuan berdasarkan data${hasPageContent ? ' dan konten halaman' : ''}>",
-      "confidence": <number 0-100, tingkat keyakinan>,
-      "impact": "<estimasi dampak jika diperbaiki>"
+      "title": "<judul temuan singkat dan tajam>",
+      "desc": "<deskripsi detail 2-4 kalimat. Kutip data spesifik. ${hasPageContent ? 'Kutip elemen halaman yang relevan.' : ''} Jelaskan MENGAPA ini berdampak pada konversi berdasarkan prinsip psikologi/UX.>",
+      "confidence": <number 0-100>,
+      "impact": "<estimasi dampak kuantitatif, misal: +1.5-3% conversion rate, -20% bounce rate, +500 leads/bulan>"
     }
   ],
   "recommendations": [
     {
       "priority": "<tinggi|sedang|rendah>",
-      "title": "<judul rekomendasi>",
-      "desc": "<penjelasan mengapa ini penting${hasPageContent ? '. Referensikan elemen spesifik dari halaman.' : ''}>",
-      "sectionTarget": "<nama section yang harus diperbaiki, misal: Hero Section, Pricing, dll (opsional)>",
-      "textBefore": "<teks asli saat ini yang kurang baik (opsional, isi jika ada teks yang perlu diubah)>",
-      "textAfter": "<saran teks baru yang lebih konversi tinggi (opsional, isi jika textBefore diisi)>",
+      "title": "<judul rekomendasi yang spesifik dan actionable>",
+      "desc": "<penjelasan 3-5 kalimat mengapa ini penting. ${hasPageContent ? 'Referensikan elemen spesifik dari halaman.' : ''} Sertakan prinsip CRO yang mendukung rekomendasi ini.>",
+      "sectionTarget": "<nama section yang harus diperbaiki, misal: Hero Section, Pricing, Testimonials>",
+      "textBefore": "<teks asli saat ini yang kurang baik — kutip persis dari halaman>",
+      "textAfter": "<saran teks baru yang lebih powerful — siap copy-paste. Gunakan teknik copywriting: pain-agitate-solve, power words, specific numbers>",
       "steps": [
-        "<langkah 1 yang spesifik${hasPageContent ? ' — referensikan teks/elemen actual dari halaman' : ''}>",
-        "<langkah 2 yang spesifik>",
-        "<langkah 3 yang spesifik>"
+        "<langkah 1 yang sangat spesifik dan bisa langsung dieksekusi>",
+        "<langkah 2 — sertakan contoh kode/teks jika relevan>",
+        "<langkah 3 — jelaskan cara mengukur hasilnya>"
       ]
     }
   ]
 }
 
-Berikan minimal 3 insights dan 4 recommendations. Urutkan insights dari yang paling kritis, dan recommendations dari prioritas tertinggi.${hasPageContent ? '\n\nKarena kamu memiliki akses ke konten halaman, pastikan rekomendasi SANGAT SPESIFIK — misalnya jangan hanya bilang "perbaiki headline" tapi sarankan teks headline baru yang lebih baik. Jangan hanya bilang "tambahkan CTA" tapi sarankan teks CTA yang spesifik beserta penempatannya.' : ''}`;
+Berikan minimal 5 insights dan 6 recommendations yang berkualitas tinggi. Urutkan insights dari yang paling kritis ke peluang, dan recommendations dari prioritas tertinggi.${hasPageContent ? '\n\nKarena kamu memiliki akses ke konten halaman, SETIAP rekomendasi HARUS menyertakan textBefore dan textAfter yang spesifik jika relevan. Jangan pernah hanya bilang "perbaiki headline" — tulis ulang headline tersebut. Jangan hanya bilang "tambahkan CTA" — tulis teks CTA spesifik beserta warna dan penempatannya. Berikan minimal 3 contoh alternatif headline/CTA untuk rekomendasi utama.' : ''}`;
 
   const userPrompt = `Berikut data analitik landing page yang perlu kamu analisa:\n\n${analyticsContext}${pageContentContext}`;
 
@@ -460,13 +493,13 @@ Berikan minimal 3 insights dan 4 recommendations. Urutkan insights dari yang pal
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'gpt-5.6',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: 0.7,
-        max_tokens: 4000,
+        temperature: 0.5,
+        max_tokens: 8000,
       }),
     });
 
@@ -511,6 +544,10 @@ Berikan minimal 3 insights dan 4 recommendations. Urutkan insights dari yang pal
         { status: 502 }
       );
     }
+
+    // Increment AI Analysis usage count
+    await supabase.rpc('increment_ai_analysis', { user_id_param: user.id })
+      .catch((err) => console.error('Failed to increment AI analysis count', err));
 
     return NextResponse.json({ analysis, pageScraped: !!pageContent });
   } catch (fetchErr) {

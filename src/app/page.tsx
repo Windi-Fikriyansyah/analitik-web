@@ -466,27 +466,27 @@ export default function HomePage() {
             {[
               {
                 name: "Free", price: "Rp0",
-                features: ["1.000 Visitor/bln", "1 Landing Page", "Retensi 7 hari", "Basic analytics"],
+                features: ["1.000 Visitor/bln", "1 Landing Page", "Retensi 7 hari", "1 Analisa AI/bulan", "Basic analytics"],
                 cta: "Daftar Gratis", popular: false,
               },
               {
                 name: "Starter", price: "Rp49rb",
-                features: ["5.000 Visitor/bln", "3 Landing Page", "Retensi 30 hari", "Visitor, session, device, section"],
+                features: ["5.000 Visitor/bln", "3 Landing Page", "Retensi 30 hari", "10 Analisa AI/bulan", "Visitor, session, device, section"],
                 cta: "Pilih Starter", popular: false,
               },
               {
                 name: "Growth", price: "Rp99rb",
-                features: ["15.000 Visitor/bln", "10 Landing Page", "Retensi 90 hari", "Semua Starter + funnel + heatmap sederhana"],
+                features: ["15.000 Visitor/bln", "10 Landing Page", "Retensi 90 hari", "40 Analisa AI/bulan", "Semua Starter + funnel + heatmap"],
                 cta: "Pilih Growth", popular: true,
               },
               {
                 name: "Business", price: "Rp199rb",
-                features: ["50.000 Visitor/bln", "30 Landing Page", "Retensi 180 hari", "Semua Growth + conversion tracking + export"],
+                features: ["50.000 Visitor/bln", "30 Landing Page", "Retensi 180 hari", "150 Analisa AI/bulan", "Semua Growth + conversion tracking"],
                 cta: "Pilih Business", popular: false,
               },
               {
                 name: "Pro", price: "Rp399rb",
-                features: ["150.000 Visitor/bln", "100 Landing Page", "Retensi 1 tahun", "Semua Business + advanced analytics + AI insight"],
+                features: ["150.000 Visitor/bln", "100 Landing Page", "Retensi 1 tahun", "500 Analisa AI/bulan", "Semua Business + advanced analytics"],
                 cta: "Pilih Pro", popular: false,
               },
             ].map(plan => (
