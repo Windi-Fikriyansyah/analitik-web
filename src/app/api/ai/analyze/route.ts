@@ -493,13 +493,13 @@ Berikan minimal 5 insights dan 6 recommendations yang berkualitas tinggi. Urutka
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-5.6',
+        model: 'gpt-4o',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
         temperature: 0.5,
-        max_tokens: 8000,
+        max_tokens: 4000,
       }),
     });
 
@@ -545,11 +545,35 @@ Berikan minimal 5 insights dan 6 recommendations yang berkualitas tinggi. Urutka
       );
     }
 
-    // Increment AI Analysis usage count
-    await supabase.rpc('increment_ai_analysis', { user_id_param: user.id })
-      .catch((err) => console.error('Failed to increment AI analysis count', err));
+    // Save the report to database (service role key not required here since it's just inserting data, but we can use the server client)
+    const { data: savedReport, error: saveError } = await supabase
+      .from('ai_reports')
+      .insert({
+        site_id: site.id,
+        conversion_score: analysis.conversionScore,
+        summary: analysis.summary,
+        insights: analysis.insights,
+        recommendations: analysis.recommendations
+      })
+      .select('id')
+      .single();
 
-    return NextResponse.json({ analysis, pageScraped: !!pageContent });
+    if (saveError) {
+      console.error('Failed to save AI report to database:', saveError);
+      // We don't want to block the user if saving fails, but ideally we should.
+    }
+
+    // Increment AI Analysis usage count
+    const { error: rpcError } = await supabase.rpc('increment_ai_analysis', { user_id_param: user.id });
+    if (rpcError) {
+      console.error('Failed to increment AI analysis count', rpcError);
+    }
+
+    return NextResponse.json({ 
+      analysis, 
+      pageScraped: !!pageContent,
+      reportId: savedReport?.id 
+    });
   } catch (fetchErr) {
     console.error('OpenAI fetch error:', fetchErr);
     return NextResponse.json(

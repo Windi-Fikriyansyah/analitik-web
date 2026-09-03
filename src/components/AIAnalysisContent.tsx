@@ -16,6 +16,7 @@ import {
   TrendingUp,
   AlertTriangle,
   CheckCircle2,
+  FileText,
 } from "lucide-react";
 import { C } from "@/lib/colors";
 
@@ -327,9 +328,17 @@ function AnalysisLoading() {
 }
 
 // ---------- Main Component ----------
-export default function AIAnalysisContent({ siteId }: { siteId: string }) {
+export default function AIAnalysisContent({ 
+  siteId, 
+  initialResult, 
+  isHistory = false 
+}: { 
+  siteId: string;
+  initialResult?: AIAnalysisResult | null;
+  isHistory?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<AIAnalysisResult | null>(null);
+  const [result, setResult] = useState<AIAnalysisResult | null>(initialResult || null);
   const [pageScraped, setPageScraped] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -365,11 +374,36 @@ export default function AIAnalysisContent({ siteId }: { siteId: string }) {
   if (!loading && !result && !error) {
     return (
       <div style={{ paddingTop: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <Gauge size={22} color={C.red} />
-          <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: C.ink }}>
-            Diagnosa AI & Rekomendasi Konversi
-          </h2>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Gauge size={22} color={C.red} />
+            <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0, color: C.ink }}>
+              Diagnosa AI & Rekomendasi Konversi
+            </h2>
+          </div>
+          {!isHistory && (
+            <button
+              onClick={() => window.location.href = `/dashboard/${siteId}/ai/history`}
+              className="link-btn"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "7px 16px",
+                background: "#FFFFFF",
+                color: C.moss,
+                border: `1px solid ${C.line}`,
+                borderRadius: 6,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              <FileText size={13} />
+              Riwayat Laporan
+            </button>
+          )}
         </div>
         <p style={{ fontSize: 14, color: C.muted, marginBottom: 36, lineHeight: 1.6 }}>
           Analisis otomatis berbasis AI untuk menemukan masalah dan memberikan saran perbaikan
@@ -541,27 +575,29 @@ export default function AIAnalysisContent({ siteId }: { siteId: string }) {
             Diagnosa AI & Rekomendasi Konversi
           </h2>
         </div>
-        <button
-          onClick={runAnalysis}
-          className="link-btn"
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "7px 16px",
-            background: "transparent",
-            color: C.red,
-            border: `1px solid ${C.red}40`,
-            borderRadius: 6,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            fontFamily: "inherit",
-          }}
-        >
-          <RefreshCw size={13} />
-          Analisa Ulang
-        </button>
+        {!isHistory && (
+          <button
+            onClick={runAnalysis}
+            className="link-btn"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "7px 16px",
+              background: "transparent",
+              color: C.red,
+              border: `1px solid ${C.red}40`,
+              borderRadius: 6,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            <RefreshCw size={13} />
+            Analisa Ulang
+          </button>
+        )}
       </div>
 
       {/* Score + Summary Section */}

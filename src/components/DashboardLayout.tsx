@@ -265,6 +265,8 @@ export default function DashboardLayout({
               <option value="14">14 hari</option>
               <option value="30">30 hari</option>
               <option value="90">90 hari</option>
+              <option value="180">180 hari</option>
+              <option value="365">1 tahun</option>
             </select>
             <button className="link-btn" style={{ background: "transparent", border: "none", cursor: "pointer", position: "relative", padding: 0 }}>
               <Bell size={17} color={C.muted} />

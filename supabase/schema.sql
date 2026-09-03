@@ -138,6 +138,30 @@ create policy "owners read own button_clicks" on button_clicks
   using (exists (select 1 from sites s where s.id = button_clicks.site_id and s.owner_id = auth.uid()));
 
 -- ---------------------------------------------------------
+-- AI REPORTS
+-- ---------------------------------------------------------
+create table if not exists ai_reports (
+  id                uuid primary key default gen_random_uuid(),
+  site_id           uuid not null references sites(id) on delete cascade,
+  conversion_score  numeric not null,
+  summary           text not null,
+  insights          jsonb not null default '[]'::jsonb,
+  recommendations   jsonb not null default '[]'::jsonb,
+  created_at        timestamptz not null default now()
+);
+create index if not exists idx_ai_reports_site on ai_reports(site_id);
+
+alter table ai_reports enable row level security;
+
+create policy "owners read own ai_reports" on ai_reports
+  for select
+  using (exists (select 1 from sites s where s.id = ai_reports.site_id and s.owner_id = auth.uid()));
+
+create policy "owners insert own ai_reports" on ai_reports
+  for insert
+  with check (exists (select 1 from sites s where s.id = ai_reports.site_id and s.owner_id = auth.uid()));
+
+-- ---------------------------------------------------------
 -- USER SUBSCRIPTIONS (Billing & Limits) - Fase 1
 -- ---------------------------------------------------------
 create table if not exists user_subscriptions (
