@@ -141,7 +141,8 @@ function LoginForm() {
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap');
       ` }} />
       <main style={{
@@ -153,7 +154,7 @@ function LoginForm() {
         {/* Logo */}
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 9, textDecoration: 'none', color: C.ink, marginBottom: 32 }}>
           <Activity size={22} color={C.red} strokeWidth={2.25} />
-          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 20, fontWeight: 700, letterSpacing: '0.01em' }}>Sinyal</span>
+          <span style={{ fontFamily: "'Space Mono', monospace", fontSize: 20, fontWeight: 700, letterSpacing: '0.01em' }}>Booknesia</span>
         </Link>
 
         {/* Card */}
@@ -168,7 +169,7 @@ function LoginForm() {
           </h1>
           <p style={{ fontSize: 14, color: C.muted, margin: '0 0 28px', lineHeight: 1.5 }}>
             {mode === 'signin'
-              ? 'Selamat datang kembali di Sinyal.'
+              ? 'Selamat datang kembali di Booknesia.'
               : 'Mulai lacak performa landing page Anda.'}
           </p>
 
@@ -303,7 +304,7 @@ function LoginForm() {
 
         {/* Footer */}
         <p style={{ marginTop: 24, fontSize: 12, color: C.faint, textAlign: 'center' }}>
-          © {new Date().getFullYear()} Sinyal · Privasi terjamin, tanpa cookie
+          © {new Date().getFullYear()} Booknesia · Privasi terjamin, tanpa cookie
         </p>
       </main>
     </>

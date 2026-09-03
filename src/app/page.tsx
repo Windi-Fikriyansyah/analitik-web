@@ -17,7 +17,8 @@ const C = {
 export default function HomePage() {
   return (
     <main style={{ background: C.paper, color: C.ink, fontFamily: "'Work Sans', sans-serif", minHeight: "100vh" }}>
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700;800&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
         .mono { font-family: 'Space Mono', monospace; }
@@ -104,7 +105,7 @@ export default function HomePage() {
         <div className="section-pad" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 28px" }}>
           <Link href="/" style={{ display: "flex", alignItems: "center", gap: 9, textDecoration: "none", color: C.ink }}>
             <Activity size={20} color={C.red} strokeWidth={2.25} />
-            <span className="mono" style={{ fontSize: 17, fontWeight: 700, letterSpacing: "0.01em" }}>Sinyal</span>
+            <span className="mono" style={{ fontSize: 17, fontWeight: 700, letterSpacing: "0.01em" }}>Booknesia</span>
           </Link>
           <nav className="nav-links" style={{ display: "flex", alignItems: "center", gap: 28 }}>
             <a href="#fitur" className="nav-link">Fitur</a>
@@ -188,7 +189,7 @@ export default function HomePage() {
               background: C.screen, color: C.phosphor, padding: "18px 20px", fontSize: 12.5,
               lineHeight: 1.7, overflowX: "auto", margin: 0, textAlign: "left",
             }}>{`<script
-  src="https://app.sinyal.id/tracker.js"
+  src="https://app.Booknesia.id/tracker.js"
   data-site-id="YOUR_SITE_ID"
   async>
 </script>
@@ -300,7 +301,7 @@ export default function HomePage() {
           <div className="testi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
             {[
               {
-                quote: "Sinyal menunjukkan bahwa 60% visitor saya scroll melewati tombol Beli tanpa klik karena warnanya nge-blend. Setelah diubah berkat saran AI, konversi naik 2.4%.",
+                quote: "Booknesia menunjukkan bahwa 60% visitor saya scroll melewati tombol Beli tanpa klik karena warnanya nge-blend. Setelah diubah berkat saran AI, konversi naik 2.4%.",
                 author: "Budi Santoso",
                 role: "Performance Marketer"
               },
@@ -359,7 +360,7 @@ export default function HomePage() {
               },
               {
                 step: "02", title: "Kumpulkan Data Pengunjung",
-                desc: "Sinyal akan otomatis merekam setiap sesi: berapa lama mereka membaca, bagian mana yang dilihat, tombol mana yang diklik.",
+                desc: "Booknesia akan otomatis merekam setiap sesi: berapa lama mereka membaca, bagian mana yang dilihat, tombol mana yang diklik.",
               },
               {
                 step: "03", title: "Dapatkan Saran AI",
@@ -393,7 +394,7 @@ export default function HomePage() {
               <span style={{ color: C.red }}>AI yang memberitahu apa yang harus diperbaiki</span>
             </h2>
             <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.7, margin: "0 0 24px" }}>
-              Kebanyakan tool analitik hanya menunjukkan angka. Sinyal melangkah lebih jauh:
+              Kebanyakan tool analitik hanya menunjukkan angka. Booknesia melangkah lebih jauh:
               AI kami menganalisa semua metrik secara otomatis dan memberikan rekomendasi perbaikan
               yang spesifik dan langsung bisa diterapkan.
             </p>
@@ -534,9 +535,9 @@ export default function HomePage() {
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {[
-              { q: "Apakah script ini akan memperlambat loading website saya?", a: "Sama sekali tidak. Script Sinyal ukurannya sangat kecil (di bawah 5KB) dan dimuat secara asinkron (async), sehingga web Anda tetap ngebut seperti biasa." },
-              { q: "Platform landing page apa saja yang didukung?", a: "Semua platform! Selama Anda bisa memasukkan custom HTML/Javascript, Sinyal bisa digunakan. Mulai dari Scalev, Mayar, WordPress, Shopify, hingga custom HTML buatan sendiri." },
-              { q: "Apakah Sinyal menggunakan cookie?", a: "Tidak. Sinyal 100% cookieless dan tidak melacak data pribadi (PII) lintas website. Ini berarti Anda tidak perlu repot memasang banner cookie yang menurunkan estetika web Anda." },
+              { q: "Apakah script ini akan memperlambat loading website saya?", a: "Sama sekali tidak. Script Booknesia ukurannya sangat kecil (di bawah 5KB) dan dimuat secara asinkron (async), sehingga web Anda tetap ngebut seperti biasa." },
+              { q: "Platform landing page apa saja yang didukung?", a: "Semua platform! Selama Anda bisa memasukkan custom HTML/Javascript, Booknesia bisa digunakan. Mulai dari Scalev, Mayar, WordPress, Shopify, hingga custom HTML buatan sendiri." },
+              { q: "Apakah Booknesia menggunakan cookie?", a: "Tidak. Booknesia 100% cookieless dan tidak melacak data pribadi (PII) lintas website. Ini berarti Anda tidak perlu repot memasang banner cookie yang menurunkan estetika web Anda." },
               { q: "Bagaimana cara kerja AI analisanya?", a: "Saat Anda klik tombol Analisa, server kami akan menarik data metrik perilaku visitor, lalu mengunjungi landing page Anda untuk membaca teks (headline, CTA) di dalamnya. AI kemudian menggabungkan data ini untuk memberi saran spesifik." }
             ].map((faq, i) => (
               <div key={i} style={{ background: "#FFFFFF", border: `1px solid ${C.line}`, borderRadius: 12, padding: "24px" }}>
@@ -579,10 +580,10 @@ export default function HomePage() {
         <div className="section-pad" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Activity size={16} color={C.red} strokeWidth={2.25} />
-            <span className="mono" style={{ fontSize: 14, fontWeight: 700 }}>Sinyal</span>
+            <span className="mono" style={{ fontSize: 14, fontWeight: 700 }}>Booknesia</span>
           </div>
           <p style={{ fontSize: 12.5, color: C.faint }}>
-            © {new Date().getFullYear()} Sinyal. Landing page analytics untuk Indonesia.
+            © {new Date().getFullYear()} Booknesia. Landing page analytics untuk Indonesia.
           </p>
         </div>
       </footer>

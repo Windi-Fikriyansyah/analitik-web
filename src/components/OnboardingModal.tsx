@@ -60,7 +60,7 @@ export default function OnboardingModal() {
       await navigator.clipboard.writeText(snippet);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch {}
+    } catch { }
   }
 
   return (
@@ -97,7 +97,7 @@ export default function OnboardingModal() {
                 <Activity size={20} color={C.red} strokeWidth={2.25} />
               </div>
               <span className="mono" style={{ fontSize: 13, fontWeight: 700, color: C.faint, textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                Selamat Datang di Sinyal
+                Selamat Datang di Booknesia
               </span>
             </div>
 

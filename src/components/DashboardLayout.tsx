@@ -38,7 +38,7 @@ export default function DashboardLayout({
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  
+
   const rangeQuery = searchParams.get("range") || "14";
   const [tenantOpen, setTenantOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -58,7 +58,8 @@ export default function DashboardLayout({
 
   return (
     <div className="shell" style={{ background: C.paper, color: C.ink, fontFamily: "'Work Sans', sans-serif" }}>
-      <style dangerouslySetInnerHTML={{ __html: `
+      <style dangerouslySetInnerHTML={{
+        __html: `
         @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Work+Sans:wght@400;500;600;700&display=swap');
         * { box-sizing: border-box; }
         .mono { font-family: 'Space Mono', monospace; }
@@ -146,7 +147,7 @@ export default function DashboardLayout({
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <Activity size={19} color={C.red} strokeWidth={2.25} />
-          <span className="mono" style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>Sinyal</span>
+          <span className="mono" style={{ fontSize: 16, fontWeight: 700, letterSpacing: "0.01em" }}>Booknesia</span>
           <button className="sidebar-close link-btn" onClick={() => setSidebarOpen(false)} style={{ background: "transparent", border: "none", cursor: "pointer" }}>
             <X size={18} color={C.muted} />
           </button>
@@ -173,14 +174,18 @@ export default function DashboardLayout({
             <div style={{ position: "relative", background: C.paper, zIndex: 10, paddingTop: 4 }}>
               {sites.map((t) => (
                 <Link key={t.id} href={`/dashboard/${t.id}`} onClick={() => { setTenantOpen(false); }} className="rowline block"
-                  style={{ width: "100%", textAlign: "left", padding: "7px 0", border: "none",
-                    background: "transparent", color: C.ink, fontSize: 13.5, cursor: "pointer", textDecoration: "none" }}>
+                  style={{
+                    width: "100%", textAlign: "left", padding: "7px 0", border: "none",
+                    background: "transparent", color: C.ink, fontSize: 13.5, cursor: "pointer", textDecoration: "none"
+                  }}>
                   {t.name}
                 </Link>
               ))}
               <Link href={`/dashboard?new=1`} onClick={() => { setTenantOpen(false); }} className="rowline block"
-                style={{ width: "100%", textAlign: "left", padding: "7px 0", border: "none",
-                  background: "transparent", color: C.red, fontSize: 13.5, fontWeight: 600, cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, marginTop: 4, borderTop: `1px solid ${C.line}` }}>
+                style={{
+                  width: "100%", textAlign: "left", padding: "7px 0", border: "none",
+                  background: "transparent", color: C.red, fontSize: 13.5, fontWeight: 600, cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, marginTop: 4, borderTop: `1px solid ${C.line}`
+                }}>
                 <Plus size={14} /> Tambah Project Baru
               </Link>
             </div>
@@ -245,14 +250,16 @@ export default function DashboardLayout({
               <ResetDataButton siteId={currentSite.id} />
             )}
 
-            <select 
-              value={rangeQuery} 
+            <select
+              value={rangeQuery}
               onChange={(e) => {
                 const newRange = e.target.value;
                 router.push(`${pathname}?range=${newRange}`);
               }}
-              style={{ background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, paddingBottom: 6,
-                color: C.ink, fontSize: 13.5, cursor: "pointer" }}
+              style={{
+                background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, paddingBottom: 6,
+                color: C.ink, fontSize: 13.5, cursor: "pointer"
+              }}
             >
               <option value="7">7 hari</option>
               <option value="14">14 hari</option>

@@ -32,7 +32,7 @@ export default async function StandaloneCheckoutPage({ params }: { params: { inv
         <header className="w-full bg-surface border-b border-surface-container-highest docked full-width top-0 z-40">
           <div className="flex justify-between items-center w-full px-8 py-4 max-w-[1360px] mx-auto">
             <div className="font-headline-md text-[24px] tracking-wider text-on-surface font-bold" style={{ fontFamily: "'Space Mono', monospace" }}>
-              Sinyal
+              Booknesia
             </div>
             <div className="flex items-center gap-3 text-secondary">
               <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container border border-surface-container-highest rounded-lg text-[11px] font-medium text-primary">
@@ -42,7 +42,7 @@ export default async function StandaloneCheckoutPage({ params }: { params: { inv
             </div>
           </div>
         </header>
-        
+
         <main className="flex-grow max-w-[1360px] w-full mx-auto px-4 sm:px-8 py-8 md:py-12">
           <CheckoutClient siteId={siteId} initialInvoice={invoice} />
         </main>

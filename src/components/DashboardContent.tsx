@@ -73,7 +73,7 @@ export default function DashboardContent({
 
   return (
     <>
-      {/* Strip sinyal langsung */}
+      {/* Strip Booknesia langsung */}
       <div className="scope-strip">
         <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
           <span className="rec-dot" style={{ width: 7, height: 7, borderRadius: "50%", background: C.red }} />

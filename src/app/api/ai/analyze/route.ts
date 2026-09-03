@@ -68,7 +68,7 @@ async function scrapePageContent(domain: string): Promise<PageContent | null> {
 
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SinyalBot/1.0; +https://sinyal.id)',
+        'User-Agent': 'Mozilla/5.0 (compatible; BooknesiaBot/1.0; +https://Booknesia.id)',
         'Accept': 'text/html',
       },
       signal: controller.signal,
