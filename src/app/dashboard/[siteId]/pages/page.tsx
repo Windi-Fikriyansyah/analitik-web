@@ -4,7 +4,13 @@ import { C } from '@/lib/colors';
 
 export const revalidate = 30;
 
-export default async function PagesOverviewPage({ params }: { params: { siteId: string } }) {
+export default async function PagesOverviewPage({ 
+  params,
+  searchParams 
+}: { 
+  params: { siteId: string },
+  searchParams: { range?: string }
+}) {
   const supabase = getSupabaseServer();
 
   const { data: site } = await supabase
@@ -15,11 +21,32 @@ export default async function PagesOverviewPage({ params }: { params: { siteId: 
 
   if (!site) notFound();
 
-  const { data: sections } = await supabase
-    .from('section_stats')
-    .select('section_id, visitor_count, avg_duration_seconds')
+  const rangeDays = parseInt(searchParams.range || '14', 10);
+  const dateThreshold = new Date();
+  dateThreshold.setDate(dateThreshold.getDate() - rangeDays);
+  const thresholdIso = dateThreshold.toISOString();
+
+  const { data: sectionViews } = await supabase
+    .from('section_views')
+    .select('section_id, duration_seconds')
     .eq('site_id', site.id)
-    .order('visitor_count', { ascending: false });
+    .gte('entered_at', thresholdIso);
+
+  const statsMap = new Map<string, { count: number, totalDuration: number }>();
+  (sectionViews || []).forEach(v => {
+    if (!statsMap.has(v.section_id)) {
+      statsMap.set(v.section_id, { count: 0, totalDuration: 0 });
+    }
+    const stat = statsMap.get(v.section_id)!;
+    stat.count += 1;
+    stat.totalDuration += (v.duration_seconds || 0);
+  });
+
+  const sections = Array.from(statsMap.entries()).map(([section_id, stat]) => ({
+    section_id,
+    visitor_count: stat.count,
+    avg_duration_seconds: stat.totalDuration / stat.count
+  })).sort((a, b) => b.visitor_count - a.visitor_count);
 
   return (
     <div style={{ paddingTop: 10 }}>

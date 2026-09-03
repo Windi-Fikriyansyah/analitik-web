@@ -357,6 +357,30 @@
     });
 
     // ---------------------------------------------------------------
+    // Heatmap click tracking (Fase 4)
+    // ---------------------------------------------------------------
+    document.addEventListener('click', function (e) {
+      // Don't track if they clicked the exact same button that has [data-lp-button] 
+      // because that's already tracked (optional, but good for avoiding duplicate data).
+      // Actually, heatmap tracks ALL clicks to see dead clicks too.
+      // But we will send it as a separate lightweight event.
+      var x = e.pageX;
+      var y = e.pageY;
+      var w = window.innerWidth || document.documentElement.clientWidth;
+      
+      var clickEvent = {
+        type: 'heatmap_click',
+        x: x,
+        y: y,
+        w: w,
+        url: window.location.pathname + window.location.search,
+        clicked_at: nowIso()
+      };
+      
+      enqueue(clickEvent);
+    });
+
+    // ---------------------------------------------------------------
     // Session end + final flush on page hide / unload / tab switch
     // ---------------------------------------------------------------
     function endSessionAndFlush() {

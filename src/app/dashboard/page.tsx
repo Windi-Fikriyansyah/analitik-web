@@ -6,15 +6,15 @@ import OnboardingModal from '@/components/OnboardingModal';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DashboardIndexPage() {
+export default async function DashboardIndexPage({ searchParams }: { searchParams: { new?: string } }) {
   const supabase = getSupabaseServer();
   const { data: sites } = await supabase
     .from('sites')
     .select('id, name, domain, created_at')
     .order('created_at', { ascending: false });
 
-  // Jika sudah ada project/site, langsung redirect ke site pertama
-  if (sites && sites.length > 0) {
+  // Jika sudah ada project/site dan tidak sedang ingin buat baru, redirect ke site pertama
+  if (sites && sites.length > 0 && searchParams?.new !== '1') {
     redirect(`/dashboard/${sites[0].id}`);
   }
 

@@ -92,6 +92,7 @@ export default function SiteSettingsForm({ site }: SiteSettingsFormProps) {
           type="text"
           value={domain}
           onChange={(e) => setDomain(e.target.value)}
+          required
           placeholder="contoh: www.domain-anda.com"
           style={{
             padding: "10px 14px",
@@ -112,7 +113,7 @@ export default function SiteSettingsForm({ site }: SiteSettingsFormProps) {
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
         <button
           type="submit"
-          disabled={loading || (!name.trim())}
+          disabled={loading || !name.trim() || !domain.trim()}
           style={{
             display: "inline-flex",
             alignItems: "center",

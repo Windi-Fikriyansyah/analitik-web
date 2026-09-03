@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 import { isValidUuid } from '@/lib/validateSite';
 
@@ -40,6 +41,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: { siteId: 
   const { error } = await supabase.from('sites').delete().eq('id', params.siteId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  revalidatePath('/dashboard', 'layout');
   return NextResponse.json({ ok: true });
 }
 
@@ -62,8 +64,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { siteId: st
   }
 
   const updateData: { name?: string; domain?: string } = {};
-  if (body.name !== undefined) updateData.name = body.name.trim();
-  if (body.domain !== undefined) updateData.domain = body.domain.trim();
+  if (body.name !== undefined) {
+    const trimmed = body.name.trim();
+    if (!trimmed) return NextResponse.json({ error: 'name is required' }, { status: 400 });
+    updateData.name = trimmed;
+  }
+  if (body.domain !== undefined) {
+    const trimmed = body.domain.trim();
+    if (!trimmed) return NextResponse.json({ error: 'domain is required' }, { status: 400 });
+    updateData.domain = trimmed;
+  }
 
   const { error } = await supabase
     .from('sites')
@@ -72,5 +82,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { siteId: st
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  revalidatePath('/dashboard', 'layout');
   return NextResponse.json({ ok: true });
 }

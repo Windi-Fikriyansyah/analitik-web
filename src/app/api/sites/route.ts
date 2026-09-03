@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidatePath } from 'next/cache';
 import { getSupabaseServer } from '@/lib/supabaseServer';
 
 // GET /api/sites -> list the authenticated tenant's sites
@@ -29,11 +30,45 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => null);
   const name = typeof body?.name === 'string' ? body.name.trim() : '';
-  const domain = typeof body?.domain === 'string' ? body.domain.trim() : null;
+  const domain = typeof body?.domain === 'string' ? body.domain.trim() : '';
 
   if (!name) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 });
   }
+
+  if (!domain) {
+    return NextResponse.json({ error: 'domain is required' }, { status: 400 });
+  }
+
+  // --- Check Plan Limits ---
+  const { data: sub } = await supabase
+    .from('user_subscriptions')
+    .select('plan_name')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  const planName = sub?.plan_name || 'Free';
+  const limits: Record<string, number> = {
+    'Free': 1,
+    'Starter': 3,
+    'Growth': 10,
+    'Business': 30,
+    'Pro': 100,
+  };
+  const maxSites = limits[planName] || 1;
+
+  const { count } = await supabase
+    .from('sites')
+    .select('*', { count: 'exact', head: true })
+    .eq('owner_id', user.id);
+
+  if ((count || 0) >= maxSites) {
+    return NextResponse.json(
+      { error: `Batas tercapai. Paket ${planName} hanya mengizinkan maksimal ${maxSites} proyek/landing page. Silakan upgrade.` },
+      { status: 403 }
+    );
+  }
+  // --------------------------
 
   const { data, error } = await supabase
     .from('sites')
@@ -42,5 +77,8 @@ export async function POST(req: NextRequest) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  
+  revalidatePath('/dashboard', 'layout');
+
   return NextResponse.json({ site: data }, { status: 201 });
 }

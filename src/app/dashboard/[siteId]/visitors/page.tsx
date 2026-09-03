@@ -56,7 +56,13 @@ type SessionRow = {
   duration_seconds: number | null;
 };
 
-export default async function VisitorsListPage({ params }: { params: { siteId: string } }) {
+export default async function VisitorsListPage({ 
+  params,
+  searchParams 
+}: { 
+  params: { siteId: string },
+  searchParams: { range?: string }
+}) {
   const supabase = getSupabaseServer();
 
   const { data: site } = await supabase
@@ -67,16 +73,23 @@ export default async function VisitorsListPage({ params }: { params: { siteId: s
 
   if (!site) notFound();
 
+  const rangeDays = parseInt(searchParams.range || '14', 10);
+  const dateThreshold = new Date();
+  dateThreshold.setDate(dateThreshold.getDate() - rangeDays);
+  const thresholdIso = dateThreshold.toISOString();
+
   const [{ data: visitors }, { data: sessions }] = await Promise.all([
     supabase
       .from('visitors')
       .select('id, device_type, os, browser, screen_width, screen_height, first_seen, last_seen')
       .eq('site_id', site.id)
+      .gte('last_seen', thresholdIso)
       .order('last_seen', { ascending: false }),
     supabase
       .from('sessions')
       .select('visitor_id, duration_seconds')
-      .eq('site_id', site.id),
+      .eq('site_id', site.id)
+      .gte('started_at', thresholdIso),
   ]);
 
   // Aggregate sessions per visitor
@@ -94,7 +107,12 @@ export default async function VisitorsListPage({ params }: { params: { siteId: s
     <div style={{ paddingTop: 10 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14, flexWrap: "wrap", gap: 6 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, margin: 0 }}>Semua Audiens</h3>
-        <span style={{ fontSize: 12.5, color: C.faint }}>{(visitors ?? []).length} pengunjung dilacak</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 12.5, color: C.faint }}>{(visitors ?? []).length} pengunjung dilacak</span>
+          <a href={`/api/sites/${params.siteId}/export`} className="cta-ghost" style={{ fontSize: 12, padding: "4px 10px", borderRadius: 4, textDecoration: "none", color: C.ink, display: "inline-block", border: `1px solid ${C.line}` }}>
+            📥 Unduh Excel
+          </a>
+        </div>
       </div>
 
       {(!visitors || visitors.length === 0) && (

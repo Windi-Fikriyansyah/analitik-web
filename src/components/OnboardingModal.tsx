@@ -37,6 +37,7 @@ export default function OnboardingModal() {
       }
 
       setCreatedSiteId(json.site.id);
+      router.refresh(); // Invalidate Next.js router cache
     } catch {
       setLoading(false);
       setError("Terjadi kesalahan jaringan.");
@@ -132,9 +133,10 @@ export default function OnboardingModal() {
 
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: C.ink }}>
-                  Domain Situs (Opsional)
+                  Domain Situs <span style={{ color: C.red }}>*</span>
                 </label>
                 <input
+                  required
                   value={domain}
                   onChange={(e) => setDomain(e.target.value)}
                   placeholder="Contoh: produkutama.com"

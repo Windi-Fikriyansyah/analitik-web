@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   LayoutDashboard,
   FileStack,
@@ -15,6 +15,8 @@ import {
   Activity,
   Menu,
   X,
+  Plus,
+  CreditCard,
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import ResetDataButton from "@/components/ResetDataButton";
@@ -26,22 +28,32 @@ export default function DashboardLayout({
   children,
   currentSite,
   sites,
+  currentPlan,
 }: {
   children: React.ReactNode;
   currentSite: { id: string; name: string };
   sites: { id: string; name: string }[];
+  currentPlan?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  
+  const rangeQuery = searchParams.get("range") || "14";
   const [tenantOpen, setTenantOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [range, setRange] = useState("14 hari");
-  const pathname = usePathname();
+
+  // Keep nav links preserving the range query
+  const createUrl = (base: string) => `${base}?range=${rangeQuery}`;
 
   const navItems = [
-    { id: "overview", label: "Ringkasan", icon: LayoutDashboard, href: `/dashboard/${currentSite.id}` },
-    { id: "pages", label: "Halaman Arahan", icon: FileStack, href: `/dashboard/${currentSite.id}/pages` },
-    { id: "ai", label: "Diagnosa AI", icon: Gauge, href: `/dashboard/${currentSite.id}/ai` },
-    { id: "audience", label: "Audiens", icon: Users, href: `/dashboard/${currentSite.id}/visitors` },
-    { id: "settings", label: "Pengaturan", icon: Settings, href: `/dashboard/${currentSite.id}/settings` },
+    { id: "overview", label: "Ringkasan", icon: LayoutDashboard, href: createUrl(`/dashboard/${currentSite.id}`) },
+    { id: "pages", label: "Halaman Arahan", icon: FileStack, href: createUrl(`/dashboard/${currentSite.id}/pages`) },
+    { id: "audience", label: "Audiens", icon: Users, href: createUrl(`/dashboard/${currentSite.id}/visitors`) },
+    { id: "heatmap", label: "Heatmap", icon: FileStack, href: createUrl(`/dashboard/${currentSite.id}/heatmap`) },
+    { id: "ai", label: "Diagnosa AI", icon: Gauge, href: createUrl(`/dashboard/${currentSite.id}/ai`) },
+    { id: "settings", label: "Pengaturan", icon: Settings, href: createUrl(`/dashboard/${currentSite.id}/settings`) },
+    { id: "billing", label: "Langganan", icon: CreditCard, href: createUrl(`/dashboard/${currentSite.id}/billing`) },
   ];
 
   return (
@@ -166,6 +178,11 @@ export default function DashboardLayout({
                   {t.name}
                 </Link>
               ))}
+              <Link href={`/dashboard?new=1`} onClick={() => { setTenantOpen(false); }} className="rowline block"
+                style={{ width: "100%", textAlign: "left", padding: "7px 0", border: "none",
+                  background: "transparent", color: C.red, fontSize: 13.5, fontWeight: 600, cursor: "pointer", textDecoration: "none", display: "flex", alignItems: "center", gap: 6, marginTop: 4, borderTop: `1px solid ${C.line}` }}>
+                <Plus size={14} /> Tambah Project Baru
+              </Link>
             </div>
           )}
         </div>
@@ -173,7 +190,8 @@ export default function DashboardLayout({
         <nav style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           {navItems.map((item) => {
             const Icon = item.icon;
-            const active = pathname === item.href;
+            // Active if the pathname matches the base URL of the item
+            const active = pathname === item.href.split('?')[0];
             return (
               <Link key={item.id} href={item.href} onClick={() => setSidebarOpen(false)} className="navrow"
                 style={{
@@ -191,9 +209,12 @@ export default function DashboardLayout({
         </nav>
 
         <div style={{ marginTop: "auto", borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
-          <p style={{ fontSize: 12, color: C.faint, lineHeight: 1.6, margin: "0 0 12px" }}>
-            Paket Pertumbuhan — domain {sites.length} dari 5 terpakai.
-          </p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+            <span style={{ fontSize: 12, color: C.faint, fontWeight: 500 }}>Paket Saat Ini</span>
+            <span style={{ padding: "4px 10px", background: `${C.moss}15`, color: C.moss, fontSize: 11, fontWeight: 700, borderRadius: 20, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+              {currentPlan || 'FREE'}
+            </span>
+          </div>
           <LogoutButton />
         </div>
       </aside>
@@ -224,10 +245,19 @@ export default function DashboardLayout({
               <ResetDataButton siteId={currentSite.id} />
             )}
 
-            <select value={range} onChange={(e) => setRange(e.target.value)}
+            <select 
+              value={rangeQuery} 
+              onChange={(e) => {
+                const newRange = e.target.value;
+                router.push(`${pathname}?range=${newRange}`);
+              }}
               style={{ background: "transparent", border: "none", borderBottom: `1px solid ${C.line}`, paddingBottom: 6,
-                color: C.ink, fontSize: 13.5, cursor: "pointer" }}>
-              <option>7 hari</option><option>14 hari</option><option>30 hari</option>
+                color: C.ink, fontSize: 13.5, cursor: "pointer" }}
+            >
+              <option value="7">7 hari</option>
+              <option value="14">14 hari</option>
+              <option value="30">30 hari</option>
+              <option value="90">90 hari</option>
             </select>
             <button className="link-btn" style={{ background: "transparent", border: "none", cursor: "pointer", position: "relative", padding: 0 }}>
               <Bell size={17} color={C.muted} />

@@ -13,7 +13,13 @@ function formatSeconds(seconds: number) {
   return `${m}m ${s}s`;
 }
 
-export default async function SiteDashboardPage({ params }: { params: { siteId: string } }) {
+export default async function SiteDashboardPage({ 
+  params, 
+  searchParams 
+}: { 
+  params: { siteId: string },
+  searchParams: { range?: string }
+}) {
   const supabase = getSupabaseServer();
 
   const { data: site } = await supabase
@@ -24,15 +30,24 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
 
   if (!site) notFound();
 
+  // Get range filter
+  const rangeDays = parseInt(searchParams.range || '14', 10);
+  const dateThreshold = new Date();
+  dateThreshold.setDate(dateThreshold.getDate() - rangeDays);
+  const thresholdIso = dateThreshold.toISOString();
+
+  // section_stats is a view, it doesn't have created_at directly. But let's check if we can query the underlying views.
+  // Wait, section_stats is an aggregate view. If we can't filter it by date, we might just leave it or rebuild it.
+  // Let's filter what we can (visitors, sessions, button_clicks).
   const [{ data: visitors }, { data: sessions }, { data: sections }, { data: buttonClicks }] = await Promise.all([
-    supabase.from('visitors').select('id, device_type, first_seen').eq('site_id', site.id),
-    supabase.from('sessions').select('duration_seconds, started_at').eq('site_id', site.id),
+    supabase.from('visitors').select('id, device_type, first_seen').eq('site_id', site.id).gte('created_at', thresholdIso),
+    supabase.from('sessions').select('duration_seconds, started_at').eq('site_id', site.id).gte('started_at', thresholdIso),
     supabase
       .from('section_stats')
       .select('section_id, visitor_count, avg_duration_seconds, avg_entry_offset_seconds')
       .eq('site_id', site.id)
       .order('avg_entry_offset_seconds', { ascending: true }),
-    supabase.from('button_clicks').select('button_id, visitor_id').eq('site_id', site.id),
+    supabase.from('button_clicks').select('button_id, visitor_id').eq('site_id', site.id).gte('created_at', thresholdIso),
   ]);
 
   const totalVisitors = visitors?.length ?? 0;
@@ -93,10 +108,10 @@ export default async function SiteDashboardPage({ params }: { params: { siteId: 
     pct: (stat.totalClicks / maxButtonClicks) * 100,
   })).sort((a, b) => b.click_count - a.click_count);
 
-  // Generate Traffic data for last 14 days
+  // Generate Traffic data for selected range
   const trafficMap = new Map<string, { visits: number, conv: number }>();
   const today = new Date();
-  for (let i = 13; i >= 0; i--) {
+  for (let i = rangeDays - 1; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const display = d.toLocaleString('id-ID', { day: 'numeric', month: 'short', timeZone: 'Asia/Jakarta' });

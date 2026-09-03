@@ -31,7 +31,8 @@ type TrackEvent =
     }
   | { type: 'heartbeat'; last_active_at: string }
   | { type: 'session_end'; ended_at: string; duration_seconds: number }
-  | { type: 'button_click'; button_id: string; clicked_at: string };
+  | { type: 'button_click'; button_id: string; clicked_at: string }
+  | { type: 'heatmap_click'; x: number; y: number; w: number; url: string; clicked_at: string };
 
 type TrackPayload = {
   site_id: string;
@@ -109,6 +110,19 @@ export async function POST(req: NextRequest) {
   }
 
   const supabase = getSupabaseAdmin();
+
+  // ---- 3b. Check Tenant Visitor Quota ---------------------------------
+  const { data: siteData } = await supabase.from('sites').select('owner_id').eq('id', site_id).maybeSingle();
+  if (siteData) {
+    const { data: subData } = await supabase.from('user_subscriptions').select('plan_name, monthly_visitor_count').eq('user_id', siteData.owner_id).maybeSingle();
+    if (subData) {
+      const limits: Record<string, number> = { 'Free': 1000, 'Starter': 5000, 'Growth': 15000, 'Business': 50000, 'Pro': 150000 };
+      const planLimit = limits[subData.plan_name] || 1000;
+      if (subData.monthly_visitor_count >= planLimit) {
+        return NextResponse.json({ error: 'Monthly visitor limit reached for this plan' }, { status: 429, headers: corsHeaders(req) });
+      }
+    }
+  }
   const nowIso = new Date().toISOString();
 
   // ---- 4. Upsert visitor (device info rarely changes after first seen,
@@ -168,6 +182,17 @@ export async function POST(req: NextRequest) {
     clicked_at: string;
   }[] = [];
 
+  const heatmapClickRows: {
+    site_id: string;
+    session_id: string;
+    visitor_id: string;
+    page_url: string;
+    x_position: number;
+    y_position: number;
+    screen_width: number;
+    clicked_at: string;
+  }[] = [];
+
   let sessionUpdate: { last_active_at?: string; ended_at?: string; duration_seconds?: number } = {};
 
   for (const evt of events) {
@@ -214,6 +239,21 @@ export async function POST(req: NextRequest) {
         }
         break;
       }
+      case 'heatmap_click': {
+        if (typeof evt.x === 'number' && typeof evt.y === 'number' && typeof evt.w === 'number') {
+          heatmapClickRows.push({
+            site_id,
+            session_id: session.id,
+            visitor_id,
+            page_url: evt.url ?? session.page_url?.slice(0, 2048) ?? '',
+            x_position: Math.round(evt.x),
+            y_position: Math.round(evt.y),
+            screen_width: Math.round(evt.w),
+            clicked_at: evt.clicked_at ?? nowIso,
+          });
+        }
+        break;
+      }
       default:
         break;
     }
@@ -232,6 +272,13 @@ export async function POST(req: NextRequest) {
     const { error: buttonError } = await supabase.from('button_clicks').insert(buttonClickRows);
     if (buttonError) {
       console.error('button_clicks insert failed', buttonError);
+    }
+  }
+
+  if (heatmapClickRows.length > 0) {
+    const { error: heatmapError } = await supabase.from('heatmap_clicks').insert(heatmapClickRows);
+    if (heatmapError) {
+      console.error('heatmap_clicks insert failed', heatmapError);
     }
   }
 

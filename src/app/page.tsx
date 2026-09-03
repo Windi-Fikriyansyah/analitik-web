@@ -446,41 +446,74 @@ export default function HomePage() {
 
       {/* ========== PRICING ========== */}
       <section id="harga" style={{ padding: "80px 28px", background: "#FFFFFF", borderTop: `1px solid ${C.line}` }}>
-        <div className="section-pad">
+        <div className="section-pad" style={{ maxWidth: 1200 }}>
           <div style={{ textAlign: "center", marginBottom: 48 }}>
             <span className="mono" style={{ fontSize: 12, color: C.red, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
               HARGA
             </span>
             <h2 style={{ fontSize: 34, fontWeight: 800, margin: "12px 0 14px", letterSpacing: "-0.02em" }}>
-              Mulai gratis.<br />Upgrade saat Anda siap.
+              Pilih Paket yang Sesuai.<br />Upgrade saat Anda siap.
             </h2>
           </div>
-          <div style={{ maxWidth: 760, margin: "0 auto", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 24 }}>
-            <div style={{ padding: "40px", border: `1px solid ${C.line}`, borderRadius: 16, background: "#FFFFFF" }}>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Starter</h3>
-              <div style={{ fontSize: 36, fontWeight: 800, marginBottom: 24, color: C.ink }}>Rp 0<span style={{ fontSize: 16, color: C.muted, fontWeight: 500 }}>/bln</span></div>
-              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px", display: "flex", flexDirection: "column", gap: 12 }}>
-                {["1 Landing Page", "5.000 Visitor/bulan", "Basic Analytics (Funnel & Klik)", "3x AI Diagnosa/bulan"].map(feat => (
-                  <li key={feat} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.ink }}>
-                    <CheckCircle2 size={16} color={C.moss} /> {feat}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/login" className="cta-ghost" style={{ width: "100%", justifyContent: "center" }}>Daftar Gratis</Link>
-            </div>
-            <div style={{ padding: "40px", border: `2px solid ${C.red}`, borderRadius: 16, background: "#FDFCF8", position: "relative", boxShadow: "0 8px 32px rgba(178,58,42,0.08)" }}>
-              <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: C.red, color: "#FFF", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Paling Populer</div>
-              <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Pro</h3>
-              <div style={{ fontSize: 36, fontWeight: 800, marginBottom: 24, color: C.ink }}>Rp 99rb<span style={{ fontSize: 16, color: C.muted, fontWeight: 500 }}>/bln</span></div>
-              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px", display: "flex", flexDirection: "column", gap: 12 }}>
-                {["Unlimited Landing Page", "Unlimited Visitor", "Advanced Analytics", "Unlimited AI Diagnosa (Auto-Scrape)", "Priority Support"].map(feat => (
-                  <li key={feat} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, color: C.ink }}>
-                    <CheckCircle2 size={16} color={C.moss} /> {feat}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/login" className="cta-btn" style={{ width: "100%", justifyContent: "center" }}>Mulai Trial Pro</Link>
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 20 }}>
+            {[
+              {
+                name: "Free", price: "Rp0",
+                features: ["1.000 Visitor/bln", "1 Landing Page", "Retensi 7 hari", "Basic analytics"],
+                cta: "Daftar Gratis", popular: false,
+              },
+              {
+                name: "Starter", price: "Rp49rb",
+                features: ["5.000 Visitor/bln", "3 Landing Page", "Retensi 30 hari", "Visitor, session, device, section"],
+                cta: "Pilih Starter", popular: false,
+              },
+              {
+                name: "Growth", price: "Rp99rb",
+                features: ["15.000 Visitor/bln", "10 Landing Page", "Retensi 90 hari", "Semua Starter + funnel + heatmap sederhana"],
+                cta: "Pilih Growth", popular: true,
+              },
+              {
+                name: "Business", price: "Rp199rb",
+                features: ["50.000 Visitor/bln", "30 Landing Page", "Retensi 180 hari", "Semua Growth + conversion tracking + export"],
+                cta: "Pilih Business", popular: false,
+              },
+              {
+                name: "Pro", price: "Rp399rb",
+                features: ["150.000 Visitor/bln", "100 Landing Page", "Retensi 1 tahun", "Semua Business + advanced analytics + AI insight"],
+                cta: "Pilih Pro", popular: false,
+              },
+            ].map(plan => (
+              <div key={plan.name} style={{
+                padding: "32px 20px",
+                border: plan.popular ? `2px solid ${C.red}` : `1px solid ${C.line}`,
+                borderRadius: 16,
+                background: plan.popular ? "#FDFCF8" : "#FFFFFF",
+                position: "relative",
+                boxShadow: plan.popular ? "0 8px 32px rgba(178,58,42,0.08)" : "none",
+                display: "flex", flexDirection: "column"
+              }}>
+                {plan.popular && (
+                  <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: C.red, color: "#FFF", padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>
+                    Rekomendasi
+                  </div>
+                )}
+                <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>{plan.name}</h3>
+                <div style={{ fontSize: 32, fontWeight: 800, marginBottom: 24, color: C.ink, letterSpacing: "-0.03em" }}>
+                  {plan.price}<span style={{ fontSize: 13, color: C.muted, fontWeight: 500, letterSpacing: "normal" }}>/bln</span>
+                </div>
+                <ul style={{ listStyle: "none", padding: 0, margin: "0 0 32px", display: "flex", flexDirection: "column", gap: 12, flexGrow: 1 }}>
+                  {plan.features.map(feat => (
+                    <li key={feat} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, color: C.ink, lineHeight: 1.4 }}>
+                      <CheckCircle2 size={16} color={C.moss} style={{ flexShrink: 0, marginTop: 1 }} />
+                      <span>{feat}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Link href="/login" className={plan.popular ? "cta-btn" : "cta-ghost"} style={{ width: "100%", justifyContent: "center", fontSize: 13.5, padding: "10px 16px" }}>
+                  {plan.cta}
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       </section>
