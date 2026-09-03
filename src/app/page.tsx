@@ -82,14 +82,20 @@ export default function HomePage() {
 
         /* Responsive */
         @media (max-width: 768px) {
-          .hero-title { font-size: 32px !important; }
-          .hero-sub { font-size: 16px !important; }
-          .features-grid { grid-template-columns: 1fr !important; }
-          .stats-row { grid-template-columns: 1fr 1fr !important; gap: 20px !important; }
-          .steps-grid { grid-template-columns: 1fr !important; }
-          .cta-row { flex-direction: column !important; }
-          .two-col { grid-template-columns: 1fr !important; }
+          .hero-title { font-size: 32px !important; line-height: 1.2 !important; margin-bottom: 16px !important; }
+          .hero-sub { font-size: 15px !important; padding: 0 !important; margin-bottom: 24px !important; }
+          .features-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+          .stats-row { grid-template-columns: 1fr !important; gap: 24px !important; padding: 24px !important; }
+          .steps-grid { grid-template-columns: 1fr !important; gap: 16px !important; }
+          .cta-row { flex-direction: column !important; width: 100% !important; gap: 12px !important; }
+          .cta-btn, .cta-ghost { width: 100% !important; justify-content: center !important; }
+          .two-col { grid-template-columns: 1fr !important; gap: 40px !important; }
           .nav-links { display: none !important; }
+          .section-pad { padding: 0 20px !important; }
+          header .section-pad { padding: 12px 20px !important; }
+          section { padding-top: 48px !important; padding-bottom: 48px !important; }
+          .testi-grid { grid-template-columns: 1fr !important; }
+          .header-actions { display: none !important; }
         }
       ` }} />
 
@@ -106,7 +112,7 @@ export default function HomePage() {
             <a href="#ai" className="nav-link">AI Analysis</a>
             <a href="#harga" className="nav-link">Harga</a>
           </nav>
-          <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div className="header-actions" style={{ display: "flex", alignItems: "center", gap: 14 }}>
             <Link href="/login" className="nav-link" style={{ fontWeight: 600 }}>Masuk</Link>
             <Link href="/login" className="cta-btn" style={{ padding: "10px 22px", fontSize: 13.5 }}>
               Mulai Gratis
@@ -291,7 +297,7 @@ export default function HomePage() {
               <span style={{ color: C.red }}>fokus pada konversi</span>
             </h2>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
+          <div className="testi-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
             {[
               {
                 quote: "Sinyal menunjukkan bahwa 60% visitor saya scroll melewati tombol Beli tanpa klik karena warnanya nge-blend. Setelah diubah berkat saran AI, konversi naik 2.4%.",
