@@ -9,11 +9,15 @@ create extension if not exists "pgcrypto"; -- gen_random_uuid()
 -- SITES (tenants). id = the public "site_id" embedded in tracker.js
 -- ---------------------------------------------------------
 create table if not exists sites (
-  id          uuid primary key default gen_random_uuid(),
-  owner_id    uuid not null references auth.users(id) on delete cascade,
-  name        text not null,
-  domain      text,
-  created_at  timestamptz not null default now()
+  id                      uuid primary key default gen_random_uuid(),
+  owner_id                uuid not null references auth.users(id) on delete cascade,
+  name                    text not null,
+  domain                  text,
+  meta_access_token       text,
+  meta_ad_account_id      text,
+  zernio_api_key          text,
+  meta_connected_account  jsonb,
+  created_at              timestamptz not null default now()
 );
 create index if not exists idx_sites_owner on sites(owner_id);
 

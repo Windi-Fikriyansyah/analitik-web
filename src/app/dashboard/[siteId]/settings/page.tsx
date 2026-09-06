@@ -5,16 +5,34 @@ import TrackingSnippet from '@/components/TrackingSnippet';
 import SiteSettingsForm from '@/components/SiteSettingsForm';
 import DeleteSiteButton from '@/components/DeleteSiteButton';
 
-export const revalidate = 30;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export default async function SettingsPage({ params }: { params: { siteId: string } }) {
   const supabase = getSupabaseServer();
 
-  const { data: site } = await supabase
+  let { data: site, error } = await supabase
     .from('sites')
-    .select('id, name, domain')
+    .select('id, name, domain, zernio_api_key, meta_connected_account')
     .eq('id', params.siteId)
     .maybeSingle();
+
+  let migrationPending = false;
+  if (error && error.code === '42703') {
+    migrationPending = true;
+    const fallback = await supabase
+      .from('sites')
+      .select('id, name, domain')
+      .eq('id', params.siteId)
+      .maybeSingle();
+    site = fallback.data
+      ? {
+          ...fallback.data,
+          zernio_api_key: null,
+          meta_connected_account: null,
+        }
+      : null;
+  }
 
   if (!site) notFound();
 
@@ -28,7 +46,7 @@ export default async function SettingsPage({ params }: { params: { siteId: strin
       <div style={{ display: 'grid', gap: 24, maxWidth: 700 }}>
         <div style={{ padding: 24, border: `1px solid ${C.line}`, borderRadius: 8, background: '#FFFFFF' }}>
           <h3 style={{ fontSize: 15, fontWeight: 700, margin: '0 0 16px' }}>Detail Domain</h3>
-          <SiteSettingsForm site={site} />
+          <SiteSettingsForm site={site} migrationPending={migrationPending} />
           
           <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.line}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
              <span style={{ color: C.muted, fontSize: 13.5 }}>Site ID</span>
