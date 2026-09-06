@@ -17,6 +17,11 @@ export async function resetSiteData(siteId: string) {
     console.error("Delete error:", error);
     throw new Error("Failed to delete data");
   }
+
+  // Also clean up track_events for this site
+  await admin.from('track_events').delete().eq('site_id', siteId);
   
   revalidatePath(`/dashboard/${siteId}`);
+  revalidatePath(`/dashboard/${siteId}/events`);
 }
+

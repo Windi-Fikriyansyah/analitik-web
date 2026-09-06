@@ -17,6 +17,7 @@ import {
   X,
   Plus,
   CreditCard,
+  Zap,
 } from "lucide-react";
 import LogoutButton from "@/components/LogoutButton";
 import ResetDataButton from "@/components/ResetDataButton";
@@ -50,6 +51,7 @@ export default function DashboardLayout({
     { id: "overview", label: "Ringkasan", icon: LayoutDashboard, href: createUrl(`/dashboard/${currentSite.id}`) },
     { id: "pages", label: "Halaman Arahan", icon: FileStack, href: createUrl(`/dashboard/${currentSite.id}/pages`) },
     { id: "audience", label: "Audiens", icon: Users, href: createUrl(`/dashboard/${currentSite.id}/visitors`) },
+    { id: "events", label: "Track Event", icon: Zap, href: createUrl(`/dashboard/${currentSite.id}/events`) },
     { id: "heatmap", label: "Heatmap", icon: FileStack, href: createUrl(`/dashboard/${currentSite.id}/heatmap`) },
     { id: "ai", label: "Diagnosa AI", icon: Gauge, href: createUrl(`/dashboard/${currentSite.id}/ai`) },
     { id: "settings", label: "Pengaturan", icon: Settings, href: createUrl(`/dashboard/${currentSite.id}/settings`) },
