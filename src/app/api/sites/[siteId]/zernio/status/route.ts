@@ -37,16 +37,31 @@ async function handleCheckStatus(req: NextRequest, siteId: string) {
     );
   }
 
-  const { data: site } = await supabase
+  const { data: site, error: siteError } = await supabase
     .from('sites')
-    .select('id, zernio_api_key, meta_connected_account')
+    .select('id, owner_id, zernio_api_key, meta_connected_account')
     .eq('id', siteId)
     .maybeSingle();
+
+  if (siteError) {
+    console.error('[zernio/status] Supabase site query error:', siteError);
+    return NextResponse.json(
+      { status: false, error: 'Gagal memuat data site: ' + siteError.message },
+      { status: 500 }
+    );
+  }
 
   if (!site) {
     return NextResponse.json(
       { status: false, error: 'Site tidak ditemukan atau Anda tidak memiliki akses.' },
       { status: 404 }
+    );
+  }
+
+  if (site.owner_id !== user.id) {
+    return NextResponse.json(
+      { status: false, error: 'Anda tidak memiliki akses ke site ini.' },
+      { status: 403 }
     );
   }
 

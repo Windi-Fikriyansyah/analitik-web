@@ -38,6 +38,9 @@ export default async function SettingsPage({ params }: { params: { siteId: strin
   if (!site) notFound();
 
   const isMetaConnected = Boolean(site.meta_connected_account);
+  const connectedAccount = site.meta_connected_account as Record<string, any> | null;
+  const initialSelectedPixel = connectedAccount?.selectedPixel || null;
+  const initialSelectedAudiences = connectedAccount?.selectedAudiences || [];
 
   return (
     <div style={{ paddingTop: 10 }}>
@@ -81,7 +84,12 @@ export default async function SettingsPage({ params }: { params: { siteId: strin
         {/* Kolom Kanan: Data Custom Audience & Data Pixel Meta Ads */}
         {isMetaConnected && (
           <div style={{ display: 'grid', gap: 24 }}>
-            <MetaAdsDataViewer siteId={site.id} isConnected={true} />
+            <MetaAdsDataViewer
+              siteId={site.id}
+              isConnected={true}
+              initialSelectedPixel={initialSelectedPixel}
+              initialSelectedAudiences={initialSelectedAudiences}
+            />
           </div>
         )}
       </div>

@@ -23,14 +23,26 @@ export async function GET(
     return NextResponse.json({ status: false, error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { data: site } = await supabase
+  const { data: site, error: siteError } = await supabase
     .from('sites')
-    .select('id, zernio_api_key, meta_connected_account')
+    .select('id, owner_id, zernio_api_key, meta_connected_account')
     .eq('id', siteId)
     .maybeSingle();
 
+  if (siteError) {
+    console.error('[zernio/meta-data] Supabase site query error:', siteError);
+    return NextResponse.json(
+      { status: false, error: 'Gagal memuat data site: ' + siteError.message },
+      { status: 500 }
+    );
+  }
+
   if (!site) {
     return NextResponse.json({ status: false, error: 'Site tidak ditemukan' }, { status: 404 });
+  }
+
+  if (site.owner_id !== user.id) {
+    return NextResponse.json({ status: false, error: 'Unauthorized' }, { status: 403 });
   }
 
   const apiKey = (site.zernio_api_key || '').trim();

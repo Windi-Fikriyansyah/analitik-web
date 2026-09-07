@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { 
   MessageSquare, 
   Send, 
@@ -17,7 +18,17 @@ import {
   RefreshCw,
   PhoneCall,
   CheckCircle2,
-  X
+  X,
+  Layers,
+  Users,
+  Target,
+  AlertCircle,
+  Loader2,
+  Settings,
+  CheckSquare,
+  Square,
+  Activity,
+  CheckCheck
 } from "lucide-react";
 import { C } from "@/lib/colors";
 
@@ -32,6 +43,19 @@ export type TrackEventItem = {
   status: string | null;
   metadata: Record<string, any> | null;
   created_at: string;
+};
+
+export type SelectedPixelInfo = {
+  id: string;
+  name: string;
+  ownerAdAccountId?: string;
+};
+
+export type SelectedAudienceInfo = {
+  id: string;
+  platformAudienceId: string;
+  name: string;
+  type?: string;
 };
 
 function formatPhoneDisplay(phone: string) {
@@ -84,22 +108,59 @@ export default function TrackEventsClient({
   initialEvents,
   tableMissing = false,
   initialAppUrl,
+  selectedPixel = null,
+  selectedAudiences = [],
+  hasZernioKey = false,
 }: {
   siteId: string;
   siteName: string;
   initialEvents: TrackEventItem[];
   tableMissing?: boolean;
   initialAppUrl?: string;
+  selectedPixel?: SelectedPixelInfo | null;
+  selectedAudiences?: SelectedAudienceInfo[];
+  hasZernioKey?: boolean;
 }) {
   const [events, setEvents] = useState<TrackEventItem[]>(initialEvents);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedEventType, setSelectedEventType] = useState("all");
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
+  const [copiedPixelId, setCopiedPixelId] = useState(false);
   const [copiedSql, setCopiedSql] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [showSimModal, setShowSimModal] = useState(false);
   const [selectedMessage, setSelectedMessage] = useState<TrackEventItem | null>(null);
+
+  // Row selection for batch CAPI & Audience sync
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [targetAudienceId, setTargetAudienceId] = useState<string>(
+    selectedAudiences[0]?.platformAudienceId || selectedAudiences[0]?.id || ""
+  );
+
+  // Loading states
+  const [loadingCapiId, setLoadingCapiId] = useState<string | null>(null);
+  const [loadingSyncId, setLoadingSyncId] = useState<string | null>(null);
+  const [isBulkCapiLoading, setIsBulkCapiLoading] = useState(false);
+  const [isBulkSyncLoading, setIsBulkSyncLoading] = useState(false);
+
+  // Modals for CAPI and Audience Sync
+  const [capiModalEvent, setCapiModalEvent] = useState<TrackEventItem | null>(null);
+  const [capiEventName, setCapiEventName] = useState("Lead");
+  const [capiValue, setCapiValue] = useState("");
+  const [syncModalEvent, setSyncModalEvent] = useState<TrackEventItem | null>(null);
+  const [singleSyncAudienceId, setSingleSyncAudienceId] = useState<string>(
+    selectedAudiences[0]?.platformAudienceId || selectedAudiences[0]?.id || ""
+  );
+
+  // Global toast message
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  };
 
   // Simulator Form State (Fonnte API Send via .env)
   const [simPhone, setSimPhone] = useState("");
@@ -234,6 +295,214 @@ export default function TrackEventsClient({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  // Toggle row selection
+  const toggleSelectAll = () => {
+    if (filteredEvents.length === 0) return;
+    if (selectedRowIds.size === filteredEvents.length) {
+      setSelectedRowIds(new Set());
+    } else {
+      setSelectedRowIds(new Set(filteredEvents.map((e) => e.id)));
+    }
+  };
+
+  const toggleSelectRow = (id: string) => {
+    setSelectedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  // Copy Pixel ID
+  const copyPixel = (id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopiedPixelId(true);
+    setTimeout(() => setCopiedPixelId(false), 2000);
+  };
+
+  // Send single CAPI event
+  const handleSendCapi = async (eventItem: TrackEventItem, customEventName = "Lead", value?: number) => {
+    if (!selectedPixel?.id) {
+      showToast("Pilih Pixel Meta Ads terlebih dahulu di menu Pengaturan.", "error");
+      return;
+    }
+    setLoadingCapiId(eventItem.id);
+    try {
+      const isPurchase = customEventName.toLowerCase() === "purchase";
+      const hasValue = typeof value === "number" && !isNaN(value);
+
+      const eventDataPayload = isPurchase
+        ? { value: hasValue ? value : 0, currency: "IDR" }
+        : hasValue
+        ? { value, currency: "IDR" }
+        : undefined;
+
+      const res = await fetch(`/api/sites/${siteId}/zernio/capi-event`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventId: eventItem.id,
+          eventName: customEventName,
+          phoneNumber: eventItem.phone_number,
+          eventData: eventDataPayload,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal mengirim CAPI event");
+      }
+
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (e.id === eventItem.id) {
+            return {
+              ...e,
+              metadata: {
+                ...(e.metadata || {}),
+                capi_sent: true,
+                capi_sent_at: new Date().toISOString(),
+                capi_pixel_id: selectedPixel.id,
+                capi_pixel_name: selectedPixel.name || selectedPixel.id,
+                capi_event_name: customEventName,
+                ...(eventDataPayload?.value !== undefined ? { capi_value: eventDataPayload.value } : {}),
+              },
+            };
+          }
+          return e;
+        })
+      );
+      showToast(`Event "${customEventName}" berhasil dikirim ke Pixel ${selectedPixel.name || selectedPixel.id}!`);
+      setCapiModalEvent(null);
+    } catch (err: any) {
+      showToast(err.message || "Gagal mengirim CAPI event", "error");
+    } finally {
+      setLoadingCapiId(null);
+    }
+  };
+
+  // Send batch CAPI events
+  const handleBulkSendCapi = async (eventName = "Lead") => {
+    if (!selectedPixel?.id) {
+      showToast("Pilih Pixel Meta Ads terlebih dahulu di menu Pengaturan.", "error");
+      return;
+    }
+    const selectedItems = events.filter((e) => selectedRowIds.has(e.id));
+    if (selectedItems.length === 0) return;
+
+    setIsBulkCapiLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+
+    const isPurchase = eventName.toLowerCase() === "purchase";
+    const defaultEventData = isPurchase ? { value: 0, currency: "IDR" } : undefined;
+
+    for (const item of selectedItems) {
+      try {
+        const res = await fetch(`/api/sites/${siteId}/zernio/capi-event`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            eventId: item.id,
+            eventName,
+            phoneNumber: item.phone_number,
+            eventData: defaultEventData,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.status) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    await fetchEventsLive();
+    setIsBulkCapiLoading(false);
+    setSelectedRowIds(new Set());
+
+    if (failCount === 0) {
+      showToast(`Berhasil mengirim CAPI (${eventName}) untuk ${successCount} kontak ke Pixel!`);
+    } else {
+      showToast(
+        `Kirim CAPI selesai: ${successCount} berhasil, ${failCount} gagal.`,
+        failCount > successCount ? "error" : "success"
+      );
+    }
+  };
+
+  // Sync phone number(s) to Custom Audience
+  const handleSyncAudience = async (eventItems: TrackEventItem[], audId: string) => {
+    if (!audId) {
+      showToast("Pilih target Custom Audience terlebih dahulu.", "error");
+      return;
+    }
+    const chosenAud = selectedAudiences.find(
+      (a) => a.platformAudienceId === audId || a.id === audId
+    );
+    const audName = chosenAud?.name || audId;
+
+    if (eventItems.length === 1) {
+      setLoadingSyncId(eventItems[0].id);
+    } else {
+      setIsBulkSyncLoading(true);
+    }
+
+    try {
+      const res = await fetch(`/api/sites/${siteId}/zernio/audience-sync`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          audienceId: audId,
+          audienceName: audName,
+          phoneNumbers: eventItems.map((e) => e.phone_number),
+          eventIds: eventItems.map((e) => e.id),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal sync nomor ke Custom Audience");
+      }
+
+      const targetRecord = { id: audId, name: audName, synced_at: new Date().toISOString() };
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (eventItems.some((item) => item.id === e.id)) {
+            const existing = Array.isArray(e.metadata?.synced_audiences) ? e.metadata!.synced_audiences : [];
+            const filtered = existing.filter((a: any) => (typeof a === "string" ? a !== audId : a?.id !== audId));
+            return {
+              ...e,
+              metadata: {
+                ...(e.metadata || {}),
+                audience_synced: true,
+                audience_synced_at: new Date().toISOString(),
+                synced_audiences: [...filtered, targetRecord],
+              },
+            };
+          }
+          return e;
+        })
+      );
+
+      showToast(`Berhasil menambahkan ${eventItems.length} nomor WA ke Custom Audience "${audName}"!`);
+      setSyncModalEvent(null);
+      if (eventItems.length > 1) {
+        setSelectedRowIds(new Set());
+      }
+    } catch (err: any) {
+      showToast(err.message || "Gagal sync ke Custom Audience", "error");
+    } finally {
+      if (eventItems.length === 1) {
+        setLoadingSyncId(null);
+      } else {
+        setIsBulkSyncLoading(false);
+      }
+    }
   };
 
   // Submit Real WhatsApp Message via Fonnte Send API (using server FONNTE_TOKEN from .env)
@@ -670,6 +939,351 @@ create policy "owners delete own track_events" on track_events for delete using 
         </div>
       </div>
 
+      {/* Meta Ads Assets Active Info Card */}
+      <div
+        style={{
+          background: "#FFFFFF",
+          border: `1px solid ${C.line}`,
+          borderRadius: 8,
+          padding: "16px 20px",
+          marginBottom: 20,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 24,
+                height: 24,
+                borderRadius: 6,
+                background: "#F5F3FF",
+                color: "#7C3AED",
+              }}
+            >
+              <Target size={14} />
+            </span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.ink, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Konfigurasi Aset Meta Ads untuk Track Event
+            </span>
+          </div>
+
+          <Link
+            href={`/dashboard/${siteId}/settings`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 5,
+              fontSize: 12,
+              color: C.moss,
+              fontWeight: 600,
+              textDecoration: "none",
+            }}
+          >
+            <Settings size={13} />
+            Ubah Pilihan Aset di Pengaturan
+          </Link>
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 14,
+            paddingTop: 8,
+            borderTop: `1px solid ${C.line}`,
+          }}
+        >
+          {/* Pixel Box */}
+          <div
+            style={{
+              background: C.paper,
+              borderRadius: 6,
+              padding: "12px 14px",
+              border: `1px solid ${C.line}`,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                background: "#EDE9FE",
+                color: "#7C3AED",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Layers size={16} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
+                Meta Pixel (CAPI Event)
+              </div>
+              {selectedPixel ? (
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 700, color: C.ink, marginTop: 2 }}>
+                    {selectedPixel.name}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+                    <span className="mono" style={{ fontSize: 11, color: C.muted }}>
+                      ID: {selectedPixel.id}
+                    </span>
+                    <button
+                      onClick={() => copyPixel(selectedPixel.id)}
+                      title="Salin ID Pixel"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: 0,
+                        color: copiedPixelId ? C.moss : C.faint,
+                      }}
+                    >
+                      {copiedPixelId ? <Check size={11} /> : <Copy size={11} />}
+                    </button>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        background: "#EAF3ED",
+                        color: C.moss,
+                        fontWeight: 700,
+                        padding: "1px 6px",
+                        borderRadius: 3,
+                      }}
+                    >
+                      Aktif CAPI
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>
+                  <span>Belum ada Pixel yang dipilih. </span>
+                  <Link href={`/dashboard/${siteId}/settings`} style={{ color: C.moss, textDecoration: "underline", fontWeight: 600 }}>
+                    Pilih Pixel di Pengaturan
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Custom Audience Box */}
+          <div
+            style={{
+              background: C.paper,
+              borderRadius: 6,
+              padding: "12px 14px",
+              border: `1px solid ${C.line}`,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}
+          >
+            <div
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                background: "#DBEAFE",
+                color: "#2563EB",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              <Users size={16} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
+                  Custom Audience Target ({selectedAudiences.length})
+                </span>
+                {selectedAudiences.length > 0 && (
+                  <span
+                    style={{
+                      fontSize: 10,
+                      background: "#EFF6FF",
+                      color: "#2563EB",
+                      fontWeight: 700,
+                      padding: "1px 6px",
+                      borderRadius: 3,
+                    }}
+                  >
+                    Siap Sync WA
+                  </span>
+                )}
+              </div>
+              {selectedAudiences.length > 0 ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+                  {selectedAudiences.map((aud) => (
+                    <span
+                      key={aud.platformAudienceId || aud.id}
+                      style={{
+                        fontSize: 11,
+                        background: "#FFFFFF",
+                        border: "1px solid rgba(37, 99, 235, 0.3)",
+                        color: "#1D4ED8",
+                        fontWeight: 600,
+                        padding: "2px 8px",
+                        borderRadius: 4,
+                        maxWidth: 200,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={`${aud.name} (${aud.platformAudienceId || aud.id})`}
+                    >
+                      {aud.name}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>
+                  <span>Belum ada Custom Audience yang dipilih. </span>
+                  <Link href={`/dashboard/${siteId}/settings`} style={{ color: "#2563EB", textDecoration: "underline", fontWeight: 600 }}>
+                    Pilih Audience di Pengaturan
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Floating / Docked Bulk Action Toolbar (When rows are selected) */}
+      {selectedRowIds.size > 0 && (
+        <div
+          style={{
+            background: "#0F172A",
+            color: "#FFFFFF",
+            borderRadius: 8,
+            padding: "12px 18px",
+            marginBottom: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 12,
+            boxShadow: "0 6px 20px rgba(0,0,0,0.18)",
+            border: "1px solid #334155",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CheckSquare size={18} color="#60A5FA" />
+            <div>
+              <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                {selectedRowIds.size} event dipilih
+              </span>
+              <span style={{ fontSize: 12, color: "#94A3B8", marginLeft: 8 }}>
+                ({Array.from(new Set(events.filter((e) => selectedRowIds.has(e.id)).map((e) => e.phone_number))).length} nomor WA unik)
+              </span>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {/* Audience selector & bulk sync */}
+            {selectedAudiences.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <select
+                  value={targetAudienceId}
+                  onChange={(e) => setTargetAudienceId(e.target.value)}
+                  style={{
+                    background: "#1E293B",
+                    color: "#FFFFFF",
+                    border: "1px solid #475569",
+                    borderRadius: 6,
+                    padding: "6px 10px",
+                    fontSize: 12.5,
+                    outline: "none",
+                    maxWidth: 180,
+                  }}
+                >
+                  {selectedAudiences.map((aud) => (
+                    <option key={aud.platformAudienceId || aud.id} value={aud.platformAudienceId || aud.id}>
+                      {aud.name}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={() => {
+                    const items = events.filter((e) => selectedRowIds.has(e.id));
+                    handleSyncAudience(items, targetAudienceId);
+                  }}
+                  disabled={isBulkSyncLoading}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#2563EB",
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "7px 13px",
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: isBulkSyncLoading ? "wait" : "pointer",
+                  }}
+                >
+                  {isBulkSyncLoading ? <Loader2 size={13} className="spin" /> : <Users size={13} />}
+                  Sync WA ke Audience
+                </button>
+              </div>
+            )}
+
+            {/* Bulk CAPI button */}
+            {selectedPixel && (
+              <button
+                onClick={() => handleBulkSendCapi("Lead")}
+                disabled={isBulkCapiLoading}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
+                  background: C.moss,
+                  color: "#FFFFFF",
+                  border: "none",
+                  borderRadius: 6,
+                  padding: "7px 13px",
+                  fontSize: 12.5,
+                  fontWeight: 600,
+                  cursor: isBulkCapiLoading ? "wait" : "pointer",
+                }}
+              >
+                {isBulkCapiLoading ? <Loader2 size={13} className="spin" /> : <Activity size={13} />}
+                Kirim CAPI (Lead)
+              </button>
+            )}
+
+            <button
+              onClick={() => setSelectedRowIds(new Set())}
+              style={{
+                background: "transparent",
+                color: "#94A3B8",
+                border: "1px solid #475569",
+                borderRadius: 6,
+                padding: "6px 12px",
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Batal
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <div
         style={{
@@ -759,6 +1373,15 @@ create policy "owners delete own track_events" on track_events for delete using 
           <table className="pages-table" style={{ margin: 0 }}>
             <thead>
               <tr style={{ borderBottom: `1px solid ${C.line}`, background: C.paper }}>
+                <th style={{ width: 44, padding: "12px 14px", textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    checked={filteredEvents.length > 0 && selectedRowIds.size === filteredEvents.length}
+                    onChange={toggleSelectAll}
+                    style={{ cursor: "pointer", accentColor: C.moss }}
+                    title="Pilih Semua Event"
+                  />
+                </th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
                   Nomor WhatsApp
                 </th>
@@ -771,6 +1394,12 @@ create policy "owners delete own track_events" on track_events for delete using 
                 <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
                   Pesan Chat
                 </th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: "#7C3AED", fontWeight: 700, textTransform: "uppercase" }}>
+                  Meta Pixel (CAPI)
+                </th>
+                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: "#2563EB", fontWeight: 700, textTransform: "uppercase" }}>
+                  Custom Audience
+                </th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
                   Waktu
                 </th>
@@ -782,7 +1411,7 @@ create policy "owners delete own track_events" on track_events for delete using 
             <tbody>
               {filteredEvents.length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ padding: "48px 24px", textAlign: "center", color: C.muted }}>
+                  <td colSpan={9} style={{ padding: "48px 24px", textAlign: "center", color: C.muted }}>
                     <div style={{ display: "inline-flex", padding: 14, borderRadius: "50%", background: C.paper, marginBottom: 12 }}>
                       <MessageSquare size={28} color={C.faint} />
                     </div>
@@ -815,7 +1444,24 @@ create policy "owners delete own track_events" on track_events for delete using 
                   const waLink = `https://wa.me/${cleanDigits}`;
 
                   return (
-                    <tr key={evt.id} className="rowline" style={{ borderBottom: `1px solid ${C.line}` }}>
+                    <tr
+                      key={evt.id}
+                      className="rowline"
+                      style={{
+                        borderBottom: `1px solid ${C.line}`,
+                        background: selectedRowIds.has(evt.id) ? "rgba(59, 130, 246, 0.04)" : "transparent",
+                      }}
+                    >
+                      {/* Checkbox selection */}
+                      <td style={{ padding: "14px 14px", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={selectedRowIds.has(evt.id)}
+                          onChange={() => toggleSelectRow(evt.id)}
+                          style={{ cursor: "pointer", accentColor: C.moss }}
+                        />
+                      </td>
+
                       {/* Phone Number */}
                       <td style={{ padding: "14px 16px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
@@ -891,7 +1537,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                       </td>
 
                       {/* Message Snippet */}
-                      <td style={{ padding: "14px 16px", maxWidth: 300 }}>
+                      <td style={{ padding: "14px 16px", maxWidth: 260 }}>
                         {evt.message ? (
                           <div
                             onClick={() => setSelectedMessage(evt)}
@@ -913,6 +1559,177 @@ create policy "owners delete own track_events" on track_events for delete using 
                           <span style={{ color: C.faint, fontSize: 12, fontStyle: "italic" }}>
                             [Tidak ada teks / media]
                           </span>
+                        )}
+                      </td>
+
+                      {/* Meta Pixel (CAPI) Column */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {evt.metadata?.capi_sent ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                background: "#EAF3ED",
+                                border: "1px solid rgba(46, 125, 50, 0.25)",
+                                color: C.moss,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: "3px 8px",
+                                borderRadius: 4,
+                                whiteSpace: "nowrap",
+                              }}
+                              title={`Terkirim ke Pixel: ${evt.metadata.capi_pixel_name || evt.metadata.capi_pixel_id || ""} (${evt.metadata.capi_sent_at ? formatWibDate(evt.metadata.capi_sent_at) : "-"})`}
+                            >
+                              <CheckCircle2 size={12} color={C.moss} />
+                              CAPI {evt.metadata.capi_event_name || "Lead"}
+                            </span>
+                            <button
+                              onClick={() => setCapiModalEvent(evt)}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: C.faint,
+                                fontSize: 10.5,
+                                cursor: "pointer",
+                                padding: 0,
+                                textDecoration: "underline",
+                              }}
+                            >
+                              Kirim Ulang
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (!selectedPixel) {
+                                showToast("Pilih Pixel Meta Ads di Pengaturan terlebih dahulu", "error");
+                                return;
+                              }
+                              setCapiModalEvent(evt);
+                            }}
+                            disabled={loadingCapiId === evt.id}
+                            title={selectedPixel ? `Kirim CAPI Event ke Pixel: ${selectedPixel.name}` : "Pilih Pixel di Pengaturan"}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              background: selectedPixel ? "#FFFFFF" : C.paper,
+                              color: selectedPixel ? C.moss : C.faint,
+                              border: `1px solid ${selectedPixel ? "rgba(46, 125, 50, 0.35)" : C.line}`,
+                              borderRadius: 5,
+                              padding: "4px 9px",
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              cursor: selectedPixel ? "pointer" : "not-allowed",
+                              opacity: loadingCapiId === evt.id ? 0.65 : 1,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {loadingCapiId === evt.id ? (
+                              <Loader2 size={11} className="spin" />
+                            ) : (
+                              <Activity size={11} />
+                            )}
+                            Kirim CAPI
+                          </button>
+                        )}
+                      </td>
+
+                      {/* Custom Audience Column */}
+                      <td style={{ padding: "14px 16px" }}>
+                        {evt.metadata?.audience_synced && Array.isArray(evt.metadata.synced_audiences) && evt.metadata.synced_audiences.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                              {evt.metadata.synced_audiences.map((aud: any, idx: number) => {
+                                const name = typeof aud === "string" ? aud : aud?.name || aud?.id;
+                                return (
+                                  <span
+                                    key={idx}
+                                    style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: 4,
+                                      background: "#EFF6FF",
+                                      border: "1px solid rgba(37, 99, 235, 0.25)",
+                                      color: "#1D4ED8",
+                                      fontSize: 10.5,
+                                      fontWeight: 600,
+                                      padding: "2px 7px",
+                                      borderRadius: 4,
+                                      maxWidth: 140,
+                                      overflow: "hidden",
+                                      textOverflow: "ellipsis",
+                                      whiteSpace: "nowrap",
+                                    }}
+                                    title={`Tersinkron ke ${name}`}
+                                  >
+                                    <Users size={10} />
+                                    {name}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                            <button
+                              onClick={() => {
+                                if (selectedAudiences.length === 0) {
+                                  showToast("Pilih Custom Audience di Pengaturan terlebih dahulu", "error");
+                                  return;
+                                }
+                                setSyncModalEvent(evt);
+                              }}
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: C.faint,
+                                fontSize: 10.5,
+                                cursor: "pointer",
+                                padding: 0,
+                                textDecoration: "underline",
+                              }}
+                            >
+                              + Sync Lagi
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              if (selectedAudiences.length === 0) {
+                                showToast("Pilih Custom Audience di Pengaturan terlebih dahulu", "error");
+                                return;
+                              }
+                              if (selectedAudiences.length === 1) {
+                                handleSyncAudience([evt], selectedAudiences[0].platformAudienceId || selectedAudiences[0].id);
+                              } else {
+                                setSyncModalEvent(evt);
+                              }
+                            }}
+                            disabled={loadingSyncId === evt.id}
+                            title={selectedAudiences.length > 0 ? "Masukkan nomor WA ke Custom Audience Meta" : "Pilih Audience di Pengaturan"}
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 5,
+                              background: selectedAudiences.length > 0 ? "#FFFFFF" : C.paper,
+                              color: selectedAudiences.length > 0 ? "#1D4ED8" : C.faint,
+                              border: `1px solid ${selectedAudiences.length > 0 ? "rgba(37, 99, 235, 0.35)" : C.line}`,
+                              borderRadius: 5,
+                              padding: "4px 9px",
+                              fontSize: 11.5,
+                              fontWeight: 600,
+                              cursor: selectedAudiences.length > 0 ? "pointer" : "not-allowed",
+                              opacity: loadingSyncId === evt.id ? 0.65 : 1,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {loadingSyncId === evt.id ? (
+                              <Loader2 size={11} className="spin" />
+                            ) : (
+                              <Users size={11} />
+                            )}
+                            + Sync WA
+                          </button>
                         )}
                       </td>
 
@@ -1192,6 +2009,388 @@ create policy "owners delete own track_events" on track_events for delete using 
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* Modal: Single CAPI Event Sender */}
+      {capiModalEvent && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(34,31,25,0.45)",
+            zIndex: 65,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setCapiModalEvent(null)}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 8,
+              maxWidth: 480,
+              width: "100%",
+              padding: 24,
+              boxShadow: "0 12px 36px rgba(0,0,0,0.2)",
+              border: `1px solid ${C.line}`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#7C3AED", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                  <Layers size={13} />
+                  Meta Conversions API (CAPI)
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: "4px 0 0", color: C.ink }}>
+                  Kirim CAPI ke Meta Pixel
+                </h3>
+              </div>
+              <button
+                onClick={() => setCapiModalEvent(null)}
+                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                <X size={18} color={C.muted} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: C.paper,
+                borderRadius: 6,
+                padding: "10px 14px",
+                border: `1px solid ${C.line}`,
+                fontSize: 12.5,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ color: C.muted }}>Target Pixel:</span>
+                <strong style={{ color: C.ink }}>{selectedPixel?.name || "-"}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ color: C.muted }}>Pixel ID:</span>
+                <span className="mono" style={{ color: C.ink }}>{selectedPixel?.id || "-"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: C.muted }}>Kontak WhatsApp:</span>
+                <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
+                  {formatPhoneDisplay(capiModalEvent.phone_number)}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 5 }}>
+                Tipe Event Meta (Standard Event)
+              </label>
+              <select
+                value={capiEventName}
+                onChange={(e) => setCapiEventName(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "8px 12px",
+                  borderRadius: 6,
+                  border: `1px solid ${C.line}`,
+                  fontSize: 13,
+                  outline: "none",
+                  background: "#FFFFFF",
+                  color: C.ink,
+                }}
+              >
+                <option value="Lead">Lead (Rekomendasi untuk Chat WA)</option>
+                <option value="Purchase">Purchase (Pembelian)</option>
+                <option value="Contact">Contact (Kontak Masuk)</option>
+                <option value="AddToCart">AddToCart (Tambah ke Keranjang)</option>
+                <option value="InitiateCheckout">InitiateCheckout (Mulai Checkout)</option>
+                <option value="ViewContent">ViewContent (Lihat Konten)</option>
+              </select>
+            </div>
+
+            {capiEventName === "Purchase" && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 5 }}>
+                  Nilai Transaksi (IDR - Opsional)
+                </label>
+                <input
+                  type="number"
+                  placeholder="Kosongkan untuk Rp 0 (opsional)"
+                  value={capiValue}
+                  onChange={(e) => setCapiValue(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${C.line}`,
+                    fontSize: 13,
+                    outline: "none",
+                    color: C.ink,
+                  }}
+                />
+                <span style={{ fontSize: 11.5, color: C.faint, display: "block", marginTop: 4 }}>
+                  Jika dikosongkan, otomatis dikirim tanpa nominal (Rp 0) sesuai standar Meta Conversions API.
+                </span>
+              </div>
+            )}
+
+            <p style={{ fontSize: 12, color: C.faint, lineHeight: 1.5, marginBottom: 18 }}>
+              Nomor WhatsApp akan otomatis di-hash (SHA256) secara aman sebelum dikirimkan ke Meta Conversions API melalui Zernio.
+            </p>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setCapiModalEvent(null)}
+                style={{
+                  padding: "8px 14px",
+                  background: "transparent",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: C.muted,
+                  cursor: "pointer",
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={loadingCapiId === capiModalEvent.id}
+                onClick={() => {
+                  const trimmed = capiValue.trim();
+                  const val = trimmed !== "" && !isNaN(Number(trimmed)) ? parseFloat(trimmed) : undefined;
+                  handleSendCapi(capiModalEvent, capiEventName, val);
+                }}
+                style={{
+                  padding: "8px 18px",
+                  background: C.moss,
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#FFFFFF",
+                  cursor: loadingCapiId === capiModalEvent.id ? "wait" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {loadingCapiId === capiModalEvent.id ? (
+                  <>
+                    <Loader2 size={13} className="spin" /> Mengirim CAPI...
+                  </>
+                ) : (
+                  <>
+                    <Activity size={13} /> Kirim Sekarang
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Single Audience Sync Selector */}
+      {syncModalEvent && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(34,31,25,0.45)",
+            zIndex: 65,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => setSyncModalEvent(null)}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 8,
+              maxWidth: 480,
+              width: "100%",
+              padding: 24,
+              boxShadow: "0 12px 36px rgba(0,0,0,0.2)",
+              border: `1px solid ${C.line}`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#2563EB", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                  <Users size={13} />
+                  Meta Custom Audience
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: "4px 0 0", color: C.ink }}>
+                  Masukkan Nomor WA ke Custom Audience
+                </h3>
+              </div>
+              <button
+                onClick={() => setSyncModalEvent(null)}
+                style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+              >
+                <X size={18} color={C.muted} />
+              </button>
+            </div>
+
+            <div
+              style={{
+                background: C.paper,
+                borderRadius: 6,
+                padding: "10px 14px",
+                border: `1px solid ${C.line}`,
+                fontSize: 12.5,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                <span style={{ color: C.muted }}>Kontak:</span>
+                <strong style={{ color: C.ink }}>{syncModalEvent.sender_name || "Tanpa Nama"}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: C.muted }}>Nomor WhatsApp:</span>
+                <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
+                  {formatPhoneDisplay(syncModalEvent.phone_number)}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 8 }}>
+                Pilih Target Custom Audience
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {selectedAudiences.map((aud) => {
+                  const val = aud.platformAudienceId || aud.id;
+                  const isSelected = singleSyncAudienceId === val;
+                  return (
+                    <label
+                      key={val}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        padding: "10px 12px",
+                        borderRadius: 6,
+                        border: `1px solid ${isSelected ? "#2563EB" : C.line}`,
+                        background: isSelected ? "#EFF6FF" : "#FFFFFF",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="singleSyncAud"
+                        value={val}
+                        checked={isSelected}
+                        onChange={() => setSingleSyncAudienceId(val)}
+                        style={{ accentColor: "#2563EB", cursor: "pointer" }}
+                      />
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>{aud.name}</div>
+                        <div className="mono" style={{ fontSize: 11, color: C.faint }}>
+                          ID: {aud.platformAudienceId || aud.id}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            <p style={{ fontSize: 12, color: C.faint, lineHeight: 1.5, marginBottom: 18 }}>
+              Nomor WhatsApp akan di-hash (SHA256) dan disinkronkan ke audience Meta untuk keperluan retargeting iklan Anda.
+            </p>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setSyncModalEvent(null)}
+                style={{
+                  padding: "8px 14px",
+                  background: "transparent",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 6,
+                  fontSize: 13,
+                  color: C.muted,
+                  cursor: "pointer",
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={loadingSyncId === syncModalEvent.id || !singleSyncAudienceId}
+                onClick={() => {
+                  handleSyncAudience([syncModalEvent], singleSyncAudienceId);
+                }}
+                style={{
+                  padding: "8px 18px",
+                  background: "#2563EB",
+                  border: "none",
+                  borderRadius: 6,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#FFFFFF",
+                  cursor: loadingSyncId === syncModalEvent.id ? "wait" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                {loadingSyncId === syncModalEvent.id ? (
+                  <>
+                    <Loader2 size={13} className="spin" /> Sinkronisasi...
+                  </>
+                ) : (
+                  <>
+                    <Users size={13} /> Masukkan ke Audience
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Global Action Toast Notification */}
+      {toast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 100,
+            background: toast.type === "error" ? "#7F1D1D" : C.screen,
+            color: toast.type === "error" ? "#FEE2E2" : C.phosphor,
+            border: `1px solid ${toast.type === "error" ? "#B91C1C" : C.moss}`,
+            padding: "12px 18px",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 13.5,
+            fontWeight: 500,
+            maxWidth: 440,
+          }}
+        >
+          {toast.type === "error" ? (
+            <AlertCircle size={18} color="#F87171" style={{ flexShrink: 0 }} />
+          ) : (
+            <CheckCircle2 size={18} color={C.phosphor} style={{ flexShrink: 0 }} />
+          )}
+          <span style={{ flex: 1 }}>{toast.message}</span>
+          <button
+            onClick={() => setToast(null)}
+            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, color: "inherit" }}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
     </div>

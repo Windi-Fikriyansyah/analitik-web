@@ -79,6 +79,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { siteId: st
     zernio_api_key?: string | null;
     meta_connected_account?: Record<string, any> | null;
     profile_id?: string | null;
+    selected_pixel?: Record<string, any> | null;
+    selected_audiences?: Record<string, any>[] | null;
   };
   try {
     body = await req.json();
@@ -106,19 +108,36 @@ export async function PATCH(req: NextRequest, { params }: { params: { siteId: st
   if (body.zernio_api_key !== undefined) {
     updateData.zernio_api_key = body.zernio_api_key ? body.zernio_api_key.trim() : null;
   }
+
+  // Handle meta_connected_account updates (direct, profile_id, or pixel/audience selection)
+  const needsMerge =
+    body.meta_connected_account !== undefined ||
+    body.profile_id !== undefined ||
+    body.selected_pixel !== undefined ||
+    body.selected_audiences !== undefined;
+
   if (body.meta_connected_account !== undefined) {
     updateData.meta_connected_account = body.meta_connected_account;
-  } else if (body.profile_id !== undefined) {
+  } else if (needsMerge) {
     const { data: currentSite } = await supabase
       .from('sites')
       .select('meta_connected_account')
       .eq('id', params.siteId)
       .maybeSingle();
     const existing = (currentSite?.meta_connected_account as Record<string, any>) || {};
-    updateData.meta_connected_account = {
-      ...existing,
-      profileId: body.profile_id || null,
-    };
+    const merged: Record<string, any> = { ...existing };
+
+    if (body.profile_id !== undefined) {
+      merged.profileId = body.profile_id || null;
+    }
+    if (body.selected_pixel !== undefined) {
+      merged.selectedPixel = body.selected_pixel;
+    }
+    if (body.selected_audiences !== undefined) {
+      merged.selectedAudiences = body.selected_audiences;
+    }
+
+    updateData.meta_connected_account = merged;
   }
 
   const { error } = await supabase

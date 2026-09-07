@@ -16,6 +16,11 @@ import {
   AlertCircle,
   BarChart2,
   ChevronDown,
+  Save,
+  Loader2,
+  CheckCircle2,
+  Plus,
+  X,
 } from "lucide-react";
 
 type MetaPixel = {
@@ -54,12 +59,32 @@ type AdAccount = {
   unusableReason?: string | null;
 };
 
+type SelectedPixelData = {
+  id: string;
+  name: string;
+  ownerAdAccountId?: string;
+};
+
+type SelectedAudienceData = {
+  id: string;
+  platformAudienceId: string;
+  name: string;
+  type?: string;
+};
+
 interface MetaAdsDataViewerProps {
   siteId: string;
   isConnected: boolean;
+  initialSelectedPixel?: SelectedPixelData | null;
+  initialSelectedAudiences?: SelectedAudienceData[];
 }
 
-export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataViewerProps) {
+export default function MetaAdsDataViewer({
+  siteId,
+  isConnected,
+  initialSelectedPixel,
+  initialSelectedAudiences,
+}: MetaAdsDataViewerProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,12 +93,80 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
   const [pixels, setPixels] = useState<MetaPixel[]>([]);
   const [audiences, setAudiences] = useState<CustomAudience[]>([]);
 
+  // Selection state
+  const [selectedPixelId, setSelectedPixelId] = useState<string>(initialSelectedPixel?.id || "");
+  const [selectedAudienceIds, setSelectedAudienceIds] = useState<Set<string>>(
+    new Set((initialSelectedAudiences || []).map((a) => a.platformAudienceId || a.id))
+  );
+
+  useEffect(() => {
+    if (initialSelectedPixel?.id) {
+      setSelectedPixelId(initialSelectedPixel.id);
+    }
+  }, [initialSelectedPixel?.id]);
+
+  useEffect(() => {
+    if (initialSelectedAudiences) {
+      setSelectedAudienceIds(new Set(initialSelectedAudiences.map((a) => a.platformAudienceId || a.id)));
+    }
+  }, [initialSelectedAudiences]);
+
+  // Save state
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   // Search filters
   const [pixelSearch, setPixelSearch] = useState("");
   const [audienceSearch, setAudienceSearch] = useState("");
 
+  // Create Custom Audience modal state
+  const [isCreateAudienceOpen, setIsCreateAudienceOpen] = useState(false);
+  const [newAudienceName, setNewAudienceName] = useState("");
+  const [newAudienceDesc, setNewAudienceDesc] = useState("");
+  const [isCreatingAudience, setIsCreatingAudience] = useState(false);
+  const [createAudienceError, setCreateAudienceError] = useState<string | null>(null);
+
   // Copy state
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCreateAudience = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAudienceName.trim()) {
+      setCreateAudienceError("Nama Custom Audience wajib diisi");
+      return;
+    }
+    setIsCreatingAudience(true);
+    setCreateAudienceError(null);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/zernio/audience-create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: newAudienceName.trim(),
+          description: newAudienceDesc.trim() || undefined,
+          adAccountId: selectedAdAccountId || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal membuat Custom Audience");
+      }
+
+      const created = data.audience;
+      setAudiences((prev) => [created, ...prev]);
+      setSelectedAudienceIds((prev) => new Set([...prev, created.platformAudienceId || created.id]));
+      setIsCreateAudienceOpen(false);
+      setNewAudienceName("");
+      setNewAudienceDesc("");
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (err: any) {
+      setCreateAudienceError(err.message || "Gagal membuat Custom Audience");
+    } finally {
+      setIsCreatingAudience(false);
+    }
+  };
 
   const fetchData = useCallback(
     async (targetAdAccountId?: string) => {
@@ -126,9 +219,76 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Toggle audience selection
+  const toggleAudience = (audId: string) => {
+    setSelectedAudienceIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(audId)) {
+        next.delete(audId);
+      } else {
+        next.add(audId);
+      }
+      return next;
+    });
+  };
+
+  // Save selections to database
+  const handleSaveSelection = async () => {
+    setIsSaving(true);
+    setSaveSuccess(false);
+    setSaveError(null);
+
+    const chosenPixel = pixels.find((p) => p.id === selectedPixelId);
+    const chosenAudiences = audiences
+      .filter((a) => selectedAudienceIds.has(a.platformAudienceId || a.id || ""))
+      .map((a) => ({
+        id: a.id || "",
+        platformAudienceId: a.platformAudienceId || "",
+        name: a.name,
+        type: a.type || "",
+      }));
+
+    try {
+      const res = await fetch(`/api/sites/${siteId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          selected_pixel: chosenPixel
+            ? { id: chosenPixel.id, name: chosenPixel.name, ownerAdAccountId: chosenPixel.ownerAdAccountId }
+            : null,
+          selected_audiences: chosenAudiences.length > 0 ? chosenAudiences : null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal menyimpan pilihan");
+      }
+
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3500);
+    } catch (err: any) {
+      setSaveError(err.message || "Gagal menyimpan");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   if (!isConnected) {
     return null;
   }
+
+  // Check if selection changed from initial
+  const hasSelectionChanged =
+    selectedPixelId !== (initialSelectedPixel?.id || "") ||
+    (() => {
+      const initialIds = new Set((initialSelectedAudiences || []).map((a) => a.platformAudienceId || a.id));
+      if (initialIds.size !== selectedAudienceIds.size) return true;
+      for (const id of selectedAudienceIds) {
+        if (!initialIds.has(id)) return true;
+      }
+      return false;
+    })();
 
   // Filtered lists
   const filteredPixels = pixels.filter((p) => {
@@ -213,33 +373,35 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
                 Aset Meta Ads (Zernio)
               </h3>
               <p style={{ fontSize: 12, color: C.muted, margin: 0 }}>
-                Data Pixel & Custom Audience live dari akun Meta Ads yang terhubung.
+                Pilih 1 Pixel dan beberapa Custom Audience untuk digunakan di halaman Track Event.
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => fetchData(selectedAdAccountId)}
-            disabled={loading}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              background: "#FFFFFF",
-              border: `1px solid ${C.line}`,
-              borderRadius: 6,
-              padding: "6px 12px",
-              fontSize: 12.5,
-              fontWeight: 500,
-              cursor: loading ? "wait" : "pointer",
-              color: C.ink,
-              transition: "all 0.15s",
-            }}
-          >
-            <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-            {loading ? "Menyinkronkan..." : "Segarkan Data"}
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              onClick={() => fetchData(selectedAdAccountId)}
+              disabled={loading}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "#FFFFFF",
+                border: `1px solid ${C.line}`,
+                borderRadius: 6,
+                padding: "6px 12px",
+                fontSize: 12.5,
+                fontWeight: 500,
+                cursor: loading ? "wait" : "pointer",
+                color: C.ink,
+                transition: "all 0.15s",
+              }}
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              {loading ? "Menyinkronkan..." : "Segarkan Data"}
+            </button>
+          </div>
         </div>
 
         {/* Ad Account Selection Dropdown */}
@@ -322,44 +484,46 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
         )}
       </div>
 
-      {/* 1. KARTU DATA PIXEL META ADS */}
+      {/* 1. KARTU DATA PIXEL META ADS - with radio selection */}
       <div
         style={{
           background: "#FFFFFF",
-          border: `1px solid ${C.line}`,
+          border: `1px solid ${selectedPixelId ? C.moss : C.line}`,
           borderRadius: 8,
           overflow: "hidden",
+          transition: "border-color 0.2s",
         }}
       >
         <div
           style={{
             padding: "14px 18px",
             borderBottom: `1px solid ${C.line}`,
-            background: "#FAFAFA",
+            background: selectedPixelId ? "#F0FDF4" : "#FAFAFA",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             flexWrap: "wrap",
             gap: 10,
+            transition: "background 0.2s",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Sparkles size={16} color={C.moss} />
             <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: C.ink }}>
-              Data Pixel Meta Ads
+              Pilih Pixel Meta Ads
             </h4>
             <span
               style={{
                 fontSize: 11,
                 fontWeight: 600,
-                background: "#EAF3ED",
+                background: selectedPixelId ? "#DCFCE7" : "#EAF3ED",
                 color: C.moss,
                 padding: "2px 8px",
                 borderRadius: 12,
                 border: "1px solid rgba(46, 125, 50, 0.2)",
               }}
             >
-              {pixels.length} Pixel
+              {selectedPixelId ? "1 Dipilih" : `${pixels.length} Pixel`}
             </span>
           </div>
 
@@ -401,66 +565,100 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "6px 0" }}>
               {filteredPixels.map((pix) => {
+                const isSelected = selectedPixelId === pix.id;
                 const isCopied = copiedId === `pix-${pix.id}`;
                 return (
                   <div
                     key={pix.id}
+                    onClick={() => setSelectedPixelId(isSelected ? "" : pix.id)}
                     style={{
                       padding: "10px 12px",
-                      border: `1px solid ${C.line}`,
+                      border: `1.5px solid ${isSelected ? C.moss : C.line}`,
                       borderRadius: 6,
-                      background: "#FFFFFF",
+                      background: isSelected ? "#F0FDF4" : "#FFFFFF",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "center",
                       gap: 12,
-                      transition: "background 0.15s",
+                      cursor: "pointer",
+                      transition: "all 0.15s",
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: C.ink,
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {pix.name || "Meta Pixel"}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10.5,
-                            fontWeight: 600,
-                            color: "#16A34A",
-                            background: "#F0FDF4",
-                            border: "1px solid #BBF7D0",
-                            borderRadius: 10,
-                            padding: "1px 6px",
-                          }}
-                        >
-                          Active
-                        </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                      {/* Radio indicator */}
+                      <div
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          border: `2px solid ${isSelected ? C.moss : C.faint}`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {isSelected && (
+                          <div
+                            style={{
+                              width: 10,
+                              height: 10,
+                              borderRadius: "50%",
+                              background: C.moss,
+                            }}
+                          />
+                        )}
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 11.5, color: C.muted, fontFamily: "monospace" }}>
-                          ID: {pix.id}
-                        </span>
-                        {pix.ownerAdAccountId && (
-                          <span style={{ fontSize: 11, color: C.faint }}>
-                            Akun: {pix.ownerAdAccountId}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              fontSize: 13,
+                              color: C.ink,
+                              whiteSpace: "nowrap",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                            }}
+                          >
+                            {pix.name || "Meta Pixel"}
                           </span>
-                        )}
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              color: "#16A34A",
+                              background: "#F0FDF4",
+                              border: "1px solid #BBF7D0",
+                              borderRadius: 10,
+                              padding: "1px 6px",
+                            }}
+                          >
+                            Active
+                          </span>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 11.5, color: C.muted, fontFamily: "monospace" }}>
+                            ID: {pix.id}
+                          </span>
+                          {pix.ownerAdAccountId && (
+                            <span style={{ fontSize: 11, color: C.faint }}>
+                              Akun: {pix.ownerAdAccountId}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => handleCopy(pix.id, `pix-${pix.id}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopy(pix.id, `pix-${pix.id}`);
+                      }}
                       title="Salin Pixel ID"
                       style={{
                         display: "inline-flex",
@@ -487,69 +685,98 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
         </div>
       </div>
 
-      {/* 2. KARTU DATA CUSTOM AUDIENCE */}
+      {/* 2. KARTU DATA CUSTOM AUDIENCE - with checkbox selection */}
       <div
         style={{
           background: "#FFFFFF",
-          border: `1px solid ${C.line}`,
+          border: `1px solid ${selectedAudienceIds.size > 0 ? C.moss : C.line}`,
           borderRadius: 8,
           overflow: "hidden",
+          transition: "border-color 0.2s",
         }}
       >
         <div
           style={{
             padding: "14px 18px",
             borderBottom: `1px solid ${C.line}`,
-            background: "#FAFAFA",
+            background: selectedAudienceIds.size > 0 ? "#F0FDF4" : "#FAFAFA",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             flexWrap: "wrap",
             gap: 10,
+            transition: "background 0.2s",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <Users size={16} color={C.moss} />
             <h4 style={{ fontSize: 14, fontWeight: 700, margin: 0, color: C.ink }}>
-              Data Custom Audience
+              Pilih Custom Audience
             </h4>
             <span
               style={{
                 fontSize: 11,
                 fontWeight: 600,
-                background: "#EAF3ED",
+                background: selectedAudienceIds.size > 0 ? "#DCFCE7" : "#EAF3ED",
                 color: C.moss,
                 padding: "2px 8px",
                 borderRadius: 12,
                 border: "1px solid rgba(46, 125, 50, 0.2)",
               }}
             >
-              {audiences.length} Audiens
+              {selectedAudienceIds.size > 0
+                ? `${selectedAudienceIds.size} Dipilih`
+                : `${audiences.length} Audiens`}
             </span>
           </div>
 
-          {/* Quick Search */}
-          <div style={{ position: "relative", minWidth: 160 }}>
-            <input
-              type="text"
-              placeholder="Cari audiens..."
-              value={audienceSearch}
-              onChange={(e) => setAudienceSearch(e.target.value)}
+          {/* Action & Search */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => setIsCreateAudienceOpen(true)}
               style={{
-                width: "100%",
-                padding: "4px 8px 4px 26px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "5px 11px",
+                background: C.moss,
+                color: "#FFFFFF",
+                border: "none",
+                borderRadius: 5,
                 fontSize: 12,
-                border: `1px solid ${C.line}`,
-                borderRadius: 4,
-                outline: "none",
-                background: "#FFFFFF",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "opacity 0.15s",
               }}
-            />
-            <Search
-              size={12}
-              color={C.muted}
-              style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)" }}
-            />
+            >
+              <Plus size={13} />
+              <span>Buat Custom Audience</span>
+            </button>
+
+            {/* Quick Search */}
+            <div style={{ position: "relative", minWidth: 150 }}>
+              <input
+                type="text"
+                placeholder="Cari audiens..."
+                value={audienceSearch}
+                onChange={(e) => setAudienceSearch(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "4px 8px 4px 26px",
+                  fontSize: 12,
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 4,
+                  outline: "none",
+                  background: "#FFFFFF",
+                }}
+              />
+              <Search
+                size={12}
+                color={C.muted}
+                style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)" }}
+              />
+            </div>
           </div>
         </div>
 
@@ -569,78 +796,137 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
             <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "6px 0" }}>
               {filteredAudiences.map((aud, idx) => {
                 const audId = aud.platformAudienceId || aud.id || `aud-${idx}`;
+                const isSelected = selectedAudienceIds.has(audId);
                 const isCopied = copiedId === `aud-${audId}`;
                 const typeBadge = getAudienceTypeBadge(aud.type);
 
                 return (
                   <div
                     key={audId}
+                    onClick={() => toggleAudience(audId)}
                     style={{
                       padding: "12px 14px",
-                      border: `1px solid ${C.line}`,
+                      border: `1.5px solid ${isSelected ? C.moss : C.line}`,
                       borderRadius: 6,
-                      background: "#FFFFFF",
+                      background: isSelected ? "#F0FDF4" : "#FFFFFF",
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "flex-start",
                       gap: 12,
+                      cursor: "pointer",
+                      transition: "all 0.15s",
                     }}
                   >
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span
-                          style={{
-                            fontWeight: 600,
-                            fontSize: 13,
-                            color: C.ink,
-                          }}
-                        >
-                          {aud.name || "Custom Audience"}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 10.5,
-                            fontWeight: 600,
-                            backgroundColor: typeBadge.bg,
-                            color: typeBadge.color,
-                            border: `1px solid ${typeBadge.border}`,
-                            borderRadius: 10,
-                            padding: "1px 6px",
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {typeBadge.label}
-                        </span>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, minWidth: 0 }}>
+                      {/* Checkbox indicator */}
+                      <div
+                        style={{
+                          width: 18,
+                          height: 18,
+                          borderRadius: 4,
+                          border: `2px solid ${isSelected ? C.moss : C.faint}`,
+                          background: isSelected ? C.moss : "transparent",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          flexShrink: 0,
+                          marginTop: 1,
+                          transition: "all 0.15s",
+                        }}
+                      >
+                        {isSelected && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
                       </div>
 
-                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
-                        <span style={{ color: C.muted, fontFamily: "monospace" }}>
-                          ID: {aud.platformAudienceId || aud.id || "-"}
-                        </span>
-                        <span style={{ color: C.faint }}>•</span>
-                        <span style={{ color: C.muted }}>
-                          Ukuran: <strong>{formatSize(aud.size)}</strong>
-                        </span>
-                        {aud.createdAt && (
-                          <>
-                            <span style={{ color: C.faint }}>•</span>
-                            <span style={{ color: C.muted }}>
-                              Dibuat: {formatDate(aud.createdAt)}
+                      <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                          <span
+                            style={{
+                              fontWeight: 600,
+                              fontSize: 13,
+                              color: C.ink,
+                            }}
+                          >
+                            {aud.name || "Custom Audience"}
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 10.5,
+                              fontWeight: 600,
+                              backgroundColor: typeBadge.bg,
+                              color: typeBadge.color,
+                              border: `1px solid ${typeBadge.border}`,
+                              borderRadius: 10,
+                              padding: "1px 6px",
+                              textTransform: "capitalize",
+                            }}
+                          >
+                            {typeBadge.label}
+                          </span>
+                          {aud.id && /^[0-9a-fA-F]{24}$/.test(aud.id) ? (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 700,
+                                background: "#DCFCE7",
+                                color: "#15803D",
+                                border: "1px solid #BBF7D0",
+                                borderRadius: 10,
+                                padding: "1px 6px",
+                              }}
+                              title="Terintegrasi dengan Zernio. Siap menerima sinkronisasi nomor WhatsApp."
+                            >
+                              ✓ Siap Sync WA
                             </span>
-                          </>
+                          ) : (
+                            <span
+                              style={{
+                                fontSize: 10,
+                                fontWeight: 500,
+                                background: "#F3F4F6",
+                                color: "#6B7280",
+                                border: "1px solid #E5E7EB",
+                                borderRadius: 10,
+                                padding: "1px 6px",
+                              }}
+                              title="Dibuat langsung di Meta Ads Manager. Tidak mendukung upload via API."
+                            >
+                              Meta Langsung (Target Iklan Saja)
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 11.5 }}>
+                          <span style={{ color: C.muted, fontFamily: "monospace" }}>
+                            ID: {aud.platformAudienceId || aud.id || "-"}
+                          </span>
+                          <span style={{ color: C.faint }}>•</span>
+                          <span style={{ color: C.muted }}>
+                            Ukuran: <strong>{formatSize(aud.size)}</strong>
+                          </span>
+                          {aud.createdAt && (
+                            <>
+                              <span style={{ color: C.faint }}>•</span>
+                              <span style={{ color: C.muted }}>
+                                Dibuat: {formatDate(aud.createdAt)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+
+                        {aud.deliveryStatus?.description && (
+                          <span style={{ fontSize: 11, color: "#16A34A" }}>
+                            ✓ {aud.deliveryStatus.description}
+                          </span>
                         )}
                       </div>
-
-                      {aud.deliveryStatus?.description && (
-                        <span style={{ fontSize: 11, color: "#16A34A" }}>
-                          ✓ {aud.deliveryStatus.description}
-                        </span>
-                      )}
                     </div>
 
                     <button
                       type="button"
-                      onClick={() => handleCopy(aud.platformAudienceId || aud.id || "", `aud-${audId}`)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopy(aud.platformAudienceId || aud.id || "", `aud-${audId}`);
+                      }}
                       title="Salin Audience ID"
                       style={{
                         display: "inline-flex",
@@ -666,6 +952,239 @@ export default function MetaAdsDataViewer({ siteId, isConnected }: MetaAdsDataVi
           )}
         </div>
       </div>
+
+      {/* 3. SAVE SELECTION BUTTON */}
+      <div
+        style={{
+          background: "#FFFFFF",
+          border: `1px solid ${C.line}`,
+          borderRadius: 8,
+          padding: "16px 20px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 12,
+        }}
+      >
+        <div style={{ fontSize: 12.5, color: C.muted }}>
+          {selectedPixelId ? (
+            <span>
+              Pixel: <strong style={{ color: C.ink }}>{pixels.find((p) => p.id === selectedPixelId)?.name || selectedPixelId}</strong>
+            </span>
+          ) : (
+            <span>Belum ada pixel yang dipilih</span>
+          )}
+          {" · "}
+          {selectedAudienceIds.size > 0 ? (
+            <span>
+              <strong style={{ color: C.ink }}>{selectedAudienceIds.size}</strong> audience dipilih
+            </span>
+          ) : (
+            <span>Belum ada audience dipilih</span>
+          )}
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {saveSuccess && (
+            <span style={{ fontSize: 12, color: C.moss, display: "flex", alignItems: "center", gap: 4 }}>
+              <CheckCircle2 size={14} /> Tersimpan!
+            </span>
+          )}
+          {saveError && (
+            <span style={{ fontSize: 12, color: C.red, display: "flex", alignItems: "center", gap: 4 }}>
+              <AlertCircle size={14} /> {saveError}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={handleSaveSelection}
+            disabled={isSaving || (!selectedPixelId && selectedAudienceIds.size === 0)}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: hasSelectionChanged ? C.moss : "#E5E7EB",
+              color: hasSelectionChanged ? "#FFFFFF" : C.muted,
+              border: "none",
+              borderRadius: 6,
+              padding: "8px 16px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: isSaving || (!selectedPixelId && selectedAudienceIds.size === 0) ? "not-allowed" : "pointer",
+              transition: "all 0.15s",
+              opacity: isSaving ? 0.7 : 1,
+            }}
+          >
+            {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {isSaving ? "Menyimpan..." : "Simpan Pilihan"}
+          </button>
+        </div>
+      </div>
+      {/* MODAL BUAT CUSTOM AUDIENCE */}
+      {isCreateAudienceOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 10,
+              width: "100%",
+              maxWidth: 480,
+              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                padding: "16px 20px",
+                borderBottom: `1px solid ${C.line}`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Users size={18} color={C.moss} />
+                <h3 style={{ fontSize: 15, fontWeight: 700, margin: 0, color: C.ink }}>
+                  Buat Custom Audience di Meta Ads
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateAudienceOpen(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAudience} style={{ padding: "18px 20px" }}>
+              <p style={{ fontSize: 12.5, color: C.muted, lineHeight: 1.5, marginTop: 0, marginBottom: 16 }}>
+                Custom Audience bertipe <strong>Customer List</strong> akan dibuat di akun iklan Meta Ads Anda dan otomatis terdaftar di Zernio sehingga siap menerima sinkronisasi nomor WhatsApp secara otomatis.
+              </p>
+
+              {createAudienceError && (
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    background: "#FEF2F2",
+                    border: "1px solid #FCA5A5",
+                    borderRadius: 6,
+                    color: "#991B1B",
+                    fontSize: 12.5,
+                    marginBottom: 14,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <AlertCircle size={14} />
+                  <span>{createAudienceError}</span>
+                </div>
+              )}
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 6 }}>
+                  Nama Custom Audience <span style={{ color: C.red }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Leads WhatsApp Website"
+                  value={newAudienceName}
+                  onChange={(e) => setNewAudienceName(e.target.value)}
+                  disabled={isCreatingAudience}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${C.line}`,
+                    fontSize: 13,
+                    outline: "none",
+                    color: C.ink,
+                  }}
+                  required
+                />
+              </div>
+
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 12.5, fontWeight: 600, color: C.ink, marginBottom: 6 }}>
+                  Deskripsi (Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Daftar kontak WhatsApp pengunjung website"
+                  value={newAudienceDesc}
+                  onChange={(e) => setNewAudienceDesc(e.target.value)}
+                  disabled={isCreatingAudience}
+                  style={{
+                    width: "100%",
+                    padding: "8px 12px",
+                    borderRadius: 6,
+                    border: `1px solid ${C.line}`,
+                    fontSize: 13,
+                    outline: "none",
+                    color: C.ink,
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setIsCreateAudienceOpen(false)}
+                  disabled={isCreatingAudience}
+                  style={{
+                    padding: "8px 14px",
+                    background: "transparent",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: C.muted,
+                    cursor: "pointer",
+                  }}
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingAudience || !newAudienceName.trim()}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "8px 18px",
+                    background: C.moss,
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: isCreatingAudience || !newAudienceName.trim() ? "not-allowed" : "pointer",
+                    opacity: isCreatingAudience || !newAudienceName.trim() ? 0.7 : 1,
+                  }}
+                >
+                  {isCreatingAudience ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+                  <span>{isCreatingAudience ? "Membuat di Meta Ads..." : "Buat & Hubungkan"}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

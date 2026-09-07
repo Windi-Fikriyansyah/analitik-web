@@ -17,13 +17,33 @@ export default async function TrackEventsPage({
   const supabase = getSupabaseServer();
 
   // Validate tenant ownership through RLS
-  const { data: site } = await supabase
+  let { data: site, error: siteError } = await supabase
     .from('sites')
-    .select('id, name, domain')
+    .select('id, name, domain, zernio_api_key, meta_connected_account')
     .eq('id', params.siteId)
     .maybeSingle();
 
+  if (siteError && siteError.code === '42703') {
+    const fallback = await supabase
+      .from('sites')
+      .select('id, name, domain')
+      .eq('id', params.siteId)
+      .maybeSingle();
+    site = fallback.data
+      ? {
+          ...fallback.data,
+          zernio_api_key: null,
+          meta_connected_account: null,
+        }
+      : null;
+  }
+
   if (!site) notFound();
+
+  const metaAccount = site.meta_connected_account as Record<string, any> | null;
+  const selectedPixel = metaAccount?.selectedPixel || null;
+  const selectedAudiences = (metaAccount?.selectedAudiences as any[]) || [];
+  const hasZernioKey = Boolean(site.zernio_api_key);
 
   // Determine dynamic appUrl from headers to match client browser port/host
   const headersList = headers();
@@ -55,6 +75,9 @@ export default async function TrackEventsPage({
       initialEvents={(events as TrackEventItem[]) || []}
       tableMissing={Boolean(tableMissing)}
       initialAppUrl={appUrl}
+      selectedPixel={selectedPixel}
+      selectedAudiences={selectedAudiences}
+      hasZernioKey={hasZernioKey}
     />
   );
 }
