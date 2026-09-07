@@ -153,6 +153,10 @@ export default function TrackEventsClient({
     selectedAudiences[0]?.platformAudienceId || selectedAudiences[0]?.id || ""
   );
 
+  // Modal for viewing synced audience phone numbers
+  const [viewAudienceModal, setViewAudienceModal] = useState<{ id: string; name: string } | null>(null);
+  const [copiedAudienceNumbers, setCopiedAudienceNumbers] = useState(false);
+
   // Global toast message
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const showToast = (message: string, type: "success" | "error" = "success") => {
@@ -1125,28 +1129,58 @@ create policy "owners delete own track_events" on track_events for delete using 
                 )}
               </div>
               {selectedAudiences.length > 0 ? (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
-                  {selectedAudiences.map((aud) => (
-                    <span
-                      key={aud.platformAudienceId || aud.id}
-                      style={{
-                        fontSize: 11,
-                        background: "#FFFFFF",
-                        border: "1px solid rgba(37, 99, 235, 0.3)",
-                        color: "#1D4ED8",
-                        fontWeight: 600,
-                        padding: "2px 8px",
-                        borderRadius: 4,
-                        maxWidth: 200,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={`${aud.name} (${aud.platformAudienceId || aud.id})`}
-                    >
-                      {aud.name}
-                    </span>
-                  ))}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                  {selectedAudiences.map((aud) => {
+                    const audIdentifier = aud.platformAudienceId || aud.id;
+                    const syncedCount = events.filter((e) =>
+                      e.metadata?.synced_audiences?.some((a: any) => {
+                        const aId = typeof a === "string" ? a : a?.id;
+                        const aName = typeof a === "string" ? a : a?.name;
+                        return aId === audIdentifier || aId === aud.id || aName === aud.name;
+                      })
+                    ).length;
+
+                    return (
+                      <button
+                        key={audIdentifier}
+                        type="button"
+                        onClick={() => setViewAudienceModal({ id: audIdentifier, name: aud.name })}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 6,
+                          fontSize: 11.5,
+                          background: "#FFFFFF",
+                          border: "1px solid rgba(37, 99, 235, 0.35)",
+                          color: "#1D4ED8",
+                          fontWeight: 600,
+                          padding: "3px 9px",
+                          borderRadius: 5,
+                          cursor: "pointer",
+                          transition: "all 0.15s",
+                          boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                        }}
+                        title={`Klik untuk melihat ${syncedCount} nomor WA di audiens "${aud.name}"`}
+                      >
+                        <Users size={12} color="#2563EB" />
+                        <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {aud.name}
+                        </span>
+                        <span
+                          style={{
+                            background: syncedCount > 0 ? "#DBEAFE" : "#F3F4F6",
+                            color: syncedCount > 0 ? "#1E40AF" : C.muted,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 6px",
+                            borderRadius: 10,
+                          }}
+                        >
+                          {syncedCount} WA
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ) : (
                 <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>
@@ -1644,9 +1678,12 @@ create policy "owners delete own track_events" on track_events for delete using 
                             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                               {evt.metadata.synced_audiences.map((aud: any, idx: number) => {
                                 const name = typeof aud === "string" ? aud : aud?.name || aud?.id;
+                                const audId = typeof aud === "string" ? aud : aud?.id || aud?.platformAudienceId || name;
                                 return (
-                                  <span
+                                  <button
                                     key={idx}
+                                    type="button"
+                                    onClick={() => setViewAudienceModal({ id: audId, name })}
                                     style={{
                                       display: "inline-flex",
                                       alignItems: "center",
@@ -1662,12 +1699,13 @@ create policy "owners delete own track_events" on track_events for delete using 
                                       overflow: "hidden",
                                       textOverflow: "ellipsis",
                                       whiteSpace: "nowrap",
+                                      cursor: "pointer",
                                     }}
-                                    title={`Tersinkron ke ${name}`}
+                                    title={`Tersinkron ke ${name}. Klik untuk lihat daftar nomor.`}
                                   >
                                     <Users size={10} />
                                     {name}
-                                  </span>
+                                  </button>
                                 );
                               })}
                             </div>
@@ -2356,6 +2394,222 @@ create policy "owners delete own track_events" on track_events for delete using 
           </div>
         </div>
       )}
+
+      {/* MODAL LIHAT DAFTAR NOMOR DI CUSTOM AUDIENCE */}
+      {viewAudienceModal && (() => {
+        const matchingEvents = events.filter((e) =>
+          e.metadata?.synced_audiences?.some((a: any) => {
+            const aId = typeof a === "string" ? a : a?.id;
+            const aName = typeof a === "string" ? a : a?.name;
+            return aId === viewAudienceModal.id || aName === viewAudienceModal.name;
+          })
+        );
+        const uniquePhonesList = Array.from(new Set(matchingEvents.map((e) => e.phone_number)));
+
+        const handleCopyAllNumbers = () => {
+          if (uniquePhonesList.length === 0) return;
+          navigator.clipboard.writeText(uniquePhonesList.join("\n"));
+          setCopiedAudienceNumbers(true);
+          setTimeout(() => setCopiedAudienceNumbers(false), 2000);
+        };
+
+        return (
+          <div
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(0, 0, 0, 0.5)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 9999,
+              padding: 16,
+            }}
+          >
+            <div
+              style={{
+                background: "#FFFFFF",
+                borderRadius: 10,
+                width: "100%",
+                maxWidth: 540,
+                boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
+                overflow: "hidden",
+                maxHeight: "85vh",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <div
+                style={{
+                  padding: "16px 20px",
+                  borderBottom: `1px solid ${C.line}`,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Users size={18} color="#2563EB" />
+                  <div>
+                    <h3 style={{ fontSize: 14.5, fontWeight: 700, margin: 0, color: C.ink }}>
+                      Daftar Kontak: {viewAudienceModal.name}
+                    </h3>
+                    <span style={{ fontSize: 11.5, color: C.muted }}>
+                      {uniquePhonesList.length} nomor WhatsApp tersinkron ke Custom Audience ini
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setViewAudienceModal(null)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: C.muted }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div style={{ padding: "16px 20px", overflowY: "auto", flex: 1 }}>
+                {/* Meta Privacy Notice */}
+                <div
+                  style={{
+                    padding: "10px 12px",
+                    background: "#EFF6FF",
+                    border: "1px solid #BFDBFE",
+                    borderRadius: 6,
+                    fontSize: 12,
+                    color: "#1E40AF",
+                    lineHeight: 1.5,
+                    marginBottom: 14,
+                  }}
+                >
+                  🔒 <strong>Info Meta Ads:</strong> Di dashboard Meta Ads Manager (Facebook), Meta secara sengaja menyembunyikan nomor telepon asli demi privasi (GDPR) dan hanya menampilkan estimasi match rate. Di bawah ini adalah daftar nomor WhatsApp asli yang telah masuk ke audiens ini dari sistem Anda.
+                </div>
+
+                {matchingEvents.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "30px 16px", color: C.muted, fontSize: 13 }}>
+                    Belum ada nomor WhatsApp yang disinkronkan ke audiens ini.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {matchingEvents.map((evt, idx) => {
+                      const syncRecord = evt.metadata?.synced_audiences?.find((a: any) => {
+                        const aId = typeof a === "string" ? a : a?.id;
+                        const aName = typeof a === "string" ? a : a?.name;
+                        return aId === viewAudienceModal.id || aName === viewAudienceModal.name;
+                      });
+                      const syncedTime = typeof syncRecord === "object" && syncRecord?.synced_at ? syncRecord.synced_at : evt.metadata?.audience_synced_at;
+
+                      return (
+                        <div
+                          key={evt.id || idx}
+                          style={{
+                            padding: "9px 12px",
+                            background: "#F9FAFB",
+                            border: `1px solid ${C.line}`,
+                            borderRadius: 6,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            fontSize: 12.5,
+                          }}
+                        >
+                          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <strong style={{ fontFamily: "monospace", color: C.ink }}>
+                                {formatPhoneDisplay(evt.phone_number)}
+                              </strong>
+                              {evt.sender_name && (
+                                <span style={{ color: C.muted, fontSize: 12 }}>({evt.sender_name})</span>
+                              )}
+                            </div>
+                            {syncedTime && (
+                              <span style={{ fontSize: 11, color: C.faint }}>
+                                Disinkronkan: {formatWibDate(syncedTime)}
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => copyPhone(evt.phone_number)}
+                            style={{
+                              background: "none",
+                              border: `1px solid ${C.line}`,
+                              borderRadius: 4,
+                              padding: "4px 8px",
+                              fontSize: 11,
+                              color: copiedPhone === evt.phone_number ? C.moss : C.muted,
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            {copiedPhone === evt.phone_number ? <Check size={11} /> : <Copy size={11} />}
+                            <span>{copiedPhone === evt.phone_number ? "Tersalin" : "Salin"}</span>
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  padding: "12px 20px",
+                  borderTop: `1px solid ${C.line}`,
+                  background: "#FAFAFA",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  type="button"
+                  disabled={uniquePhonesList.length === 0}
+                  onClick={handleCopyAllNumbers}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "7px 12px",
+                    background: "#FFFFFF",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 6,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: copiedAudienceNumbers ? C.moss : C.ink,
+                    cursor: uniquePhonesList.length === 0 ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {copiedAudienceNumbers ? <Check size={13} /> : <Copy size={13} />}
+                  <span>{copiedAudienceNumbers ? "Semua Nomor Tersalin!" : `Salin Semua (${uniquePhonesList.length} Nomor)`}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setViewAudienceModal(null)}
+                  style={{
+                    padding: "7px 16px",
+                    background: C.screen,
+                    color: "#FFFFFF",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Global Action Toast Notification */}
       {toast && (
