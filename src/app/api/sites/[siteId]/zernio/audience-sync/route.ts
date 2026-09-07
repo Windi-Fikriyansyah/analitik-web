@@ -60,6 +60,7 @@ export async function POST(
     audienceName?: string;
     adAccountId?: string;
     phoneNumbers?: string[];
+    users?: Array<{ phone?: string; email?: string }>;
     eventIds?: string[];
   };
   try {
@@ -68,13 +69,24 @@ export async function POST(
     return NextResponse.json({ status: false, error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const { audienceId, phoneNumbers, adAccountId } = body;
+  const { audienceId, phoneNumbers, users, adAccountId } = body;
 
   if (!audienceId) {
     return NextResponse.json({ status: false, error: 'audienceId wajib diisi' }, { status: 400 });
   }
-  if (!phoneNumbers || !Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
-    return NextResponse.json({ status: false, error: 'phoneNumbers wajib diisi (array)' }, { status: 400 });
+
+  const rawUsersList: Array<{ phone?: string; email?: string }> =
+    Array.isArray(users) && users.length > 0
+      ? users
+      : Array.isArray(phoneNumbers)
+      ? phoneNumbers.map((p) => ({ phone: p }))
+      : [];
+
+  if (rawUsersList.length === 0) {
+    return NextResponse.json(
+      { status: false, error: 'Daftar nomor WhatsApp atau email wajib diisi' },
+      { status: 400 }
+    );
   }
 
   // Resolve the Meta Ads account ID for Zernio
@@ -137,12 +149,29 @@ export async function POST(
   }
 
   try {
-    const formattedUsers = phoneNumbers.map((p) => {
-      const clean = normalizePhone(p);
-      return {
-        phone: clean.startsWith('+') ? clean : `+${clean}`,
-      };
-    });
+    const formattedUsers: Array<{ phone?: string; email?: string }> = [];
+    for (const u of rawUsersList) {
+      const item: { phone?: string; email?: string } = {};
+      if (u.phone && u.phone !== '-') {
+        const clean = normalizePhone(u.phone);
+        if (clean.length >= 8) {
+          item.phone = clean.startsWith('+') ? clean : `+${clean}`;
+        }
+      }
+      if (u.email && u.email.trim() && u.email.includes('@')) {
+        item.email = u.email.trim().toLowerCase();
+      }
+      if (item.phone || item.email) {
+        formattedUsers.push(item);
+      }
+    }
+
+    if (formattedUsers.length === 0) {
+      return NextResponse.json(
+        { status: false, error: 'Tidak ada nomor WhatsApp atau email valid untuk disinkronkan' },
+        { status: 400 }
+      );
+    }
 
     // Validate if audienceId is a 24-char hex Zernio ObjectId
     const isZernioId = /^[0-9a-fA-F]{24}$/.test(audienceId);
@@ -249,41 +278,79 @@ export async function POST(
     if (Array.isArray(body.eventIds) && body.eventIds.length > 0) {
       try {
         const admin = getSupabaseAdmin();
-        for (const evtId of body.eventIds) {
-          const { data: currentEvt } = await admin
-            .from('track_events')
-            .select('metadata')
-            .eq('id', evtId)
-            .eq('site_id', siteId)
-            .maybeSingle();
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const nowWib = now.toLocaleString('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }) + ' WIB';
 
-          const existingAudiences = Array.isArray(currentEvt?.metadata?.synced_audiences)
-            ? currentEvt.metadata.synced_audiences
-            : [];
+        const validEventIds = body.eventIds.filter(
+          (id) => typeof id === 'string' && isValidUuid(id)
+        );
 
+        if (validEventIds.length > 0) {
           const targetAudienceRecord = {
             id: audienceId,
             name: body.audienceName || audienceId,
-            synced_at: new Date().toISOString(),
+            synced_at: nowIso,
+            synced_at_wib: nowWib,
           };
 
-          const updatedAudiences = [
-            ...existingAudiences.filter((a: any) => (typeof a === 'string' ? a !== audienceId : a?.id !== audienceId)),
-            targetAudienceRecord,
-          ];
+          const CHUNK_SIZE = 100;
 
-          const updatedMeta = {
-            ...(currentEvt?.metadata || {}),
-            audience_synced: true,
-            audience_synced_at: new Date().toISOString(),
-            synced_audiences: updatedAudiences,
-          };
+          for (let i = 0; i < validEventIds.length; i += CHUNK_SIZE) {
+            const chunkIds = validEventIds.slice(i, i + CHUNK_SIZE);
+            const { data: chunkEvts, error: fetchErr } = await admin
+              .from('track_events')
+              .select('*')
+              .eq('site_id', siteId)
+              .in('id', chunkIds);
 
-          await admin
-            .from('track_events')
-            .update({ metadata: updatedMeta })
-            .eq('id', evtId)
-            .eq('site_id', siteId);
+            if (fetchErr) {
+              console.error('[zernio/audience-sync] Error fetching chunk:', fetchErr);
+              continue;
+            }
+
+            if (Array.isArray(chunkEvts) && chunkEvts.length > 0) {
+              const rowsToUpsert = chunkEvts.map((currentEvt) => {
+                const existingAudiences = Array.isArray(currentEvt?.metadata?.synced_audiences)
+                  ? currentEvt.metadata.synced_audiences
+                  : [];
+
+                const updatedAudiences = [
+                  ...existingAudiences.filter(
+                    (a: any) => (typeof a === 'string' ? a !== audienceId : a?.id !== audienceId)
+                  ),
+                  targetAudienceRecord,
+                ];
+
+                return {
+                  ...currentEvt,
+                  metadata: {
+                    ...(currentEvt?.metadata || {}),
+                    audience_synced: true,
+                    audience_synced_at: nowIso,
+                    audience_synced_at_wib: nowWib,
+                    synced_audiences: updatedAudiences,
+                  },
+                };
+              });
+
+              const { error: upsertErr } = await admin
+                .from('track_events')
+                .upsert(rowsToUpsert, { onConflict: 'id' });
+
+              if (upsertErr) {
+                console.error('[zernio/audience-sync] Error upserting chunk:', upsertErr);
+              }
+            }
+          }
         }
       } catch (err) {
         console.warn('[zernio/audience-sync] Could not update event metadata:', err);
@@ -292,7 +359,7 @@ export async function POST(
 
     return NextResponse.json({
       status: true,
-      message: `Berhasil menambahkan ${phoneNumbers.length} nomor ke Custom Audience`,
+      message: `Berhasil menambahkan ${rawUsersList.length} kontak ke Custom Audience`,
       data: syncData,
     });
   } catch (err: any) {

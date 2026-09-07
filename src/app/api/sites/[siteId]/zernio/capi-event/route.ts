@@ -66,7 +66,13 @@ export async function POST(
     eventId?: string;
     eventName?: string;
     phoneNumber?: string;
+    email?: string;
     eventData?: Record<string, any>;
+    items?: Array<{
+      eventId?: string;
+      phoneNumber?: string;
+      email?: string;
+    }>;
   };
   try {
     body = await req.json();
@@ -75,14 +81,18 @@ export async function POST(
   }
 
   const eventName = body.eventName || 'Lead';
-  const phoneNumber = body.phoneNumber;
+  const isPurchase = eventName.toLowerCase() === 'purchase';
+  const rawVal = body.eventData?.value;
+  const hasNumericValue =
+    rawVal !== undefined &&
+    rawVal !== null &&
+    rawVal !== '' &&
+    !isNaN(Number(rawVal));
 
-  if (!phoneNumber) {
-    return NextResponse.json({ status: false, error: 'phoneNumber wajib diisi' }, { status: 400 });
-  }
-
-  const normalizedPhone = normalizePhone(phoneNumber);
-  const hashedPhone = hashSHA256(normalizedPhone);
+  const rawItems: Array<{ eventId?: string; phoneNumber?: string; email?: string }> =
+    Array.isArray(body.items) && body.items.length > 0
+      ? body.items
+      : [{ eventId: body.eventId, phoneNumber: body.phoneNumber, email: body.email }];
 
   // Resolve the Meta Ads account ID for Zernio
   const rawProfileId = connectedAccount?.profileId;
@@ -121,46 +131,65 @@ export async function POST(
   }
 
   try {
-    const eventId =
-      body.eventId || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const conversionEvents: any[] = [];
+    const eventIdsToUpdate: string[] = [];
 
-    const conversionEvent: Record<string, any> = {
-      eventName,
-      eventTime: Math.floor(Date.now() / 1000),
-      eventId,
-      user: {
-        phone: normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`,
-      },
-    };
+    for (const item of rawItems) {
+      const phoneNumber = item.phoneNumber || '';
+      const email = (item.email || '').trim().toLowerCase();
+      const normalizedPhone = phoneNumber && phoneNumber !== '-' ? normalizePhone(phoneNumber) : '';
 
-    const isPurchase = eventName.toLowerCase() === 'purchase';
-    const rawVal = body.eventData?.value;
-    const hasNumericValue =
-      rawVal !== undefined &&
-      rawVal !== null &&
-      rawVal !== '' &&
-      !isNaN(Number(rawVal));
+      if (!normalizedPhone && !email) continue;
 
-    if (hasNumericValue) {
-      conversionEvent.value = Number(rawVal);
-      conversionEvent.currency = String(body.eventData?.currency || 'IDR').toUpperCase();
-    } else if (isPurchase) {
-      // Meta Graph API / Conversions API requires 'value' and 'currency' for Purchase event.
-      // If value is omitted or empty, fallback to 0 and IDR so Meta accepts the event successfully.
-      conversionEvent.value = 0;
-      conversionEvent.currency = String(body.eventData?.currency || 'IDR').toUpperCase();
-    } else if (body.eventData?.currency) {
-      conversionEvent.currency = String(body.eventData.currency).toUpperCase();
+      const userPayload: Record<string, any> = {};
+      if (normalizedPhone && normalizedPhone.length >= 8) {
+        userPayload.phone = normalizedPhone.startsWith('+') ? normalizedPhone : `+${normalizedPhone}`;
+      }
+      if (email && email.includes('@')) {
+        userPayload.email = email;
+      }
+
+      const evtId = item.eventId || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      if (item.eventId) {
+        eventIdsToUpdate.push(item.eventId);
+      }
+
+      const conv: Record<string, any> = {
+        eventName,
+        eventTime: nowSec,
+        eventId: evtId,
+        user: userPayload,
+      };
+
+      if (hasNumericValue) {
+        conv.value = Number(rawVal);
+        conv.currency = String(body.eventData?.currency || 'IDR').toUpperCase();
+      } else if (isPurchase) {
+        conv.value = 0;
+        conv.currency = String(body.eventData?.currency || 'IDR').toUpperCase();
+      } else if (body.eventData?.currency) {
+        conv.currency = String(body.eventData.currency).toUpperCase();
+      }
+
+      conversionEvents.push(conv);
+    }
+
+    if (conversionEvents.length === 0) {
+      return NextResponse.json(
+        { status: false, error: 'Tidak ada data nomor WhatsApp atau email valid untuk dikirim ke CAPI' },
+        { status: 400 }
+      );
     }
 
     // Official Zernio OpenAPI schema: required [accountId, destinationId, events]
     const capiPayload = {
       accountId,
       destinationId: String(selectedPixel.id),
-      events: [conversionEvent],
+      events: conversionEvents,
     };
 
-    console.log('[zernio/capi-event] Sending payload to Zernio:', JSON.stringify(capiPayload));
+    console.log(`[zernio/capi-event] Sending ${conversionEvents.length} events to Zernio`);
 
     const capiRes = await fetch('https://zernio.com/api/v1/ads/conversions', {
       method: 'POST',
@@ -205,31 +234,61 @@ export async function POST(
       );
     }
 
-    if (body.eventId) {
+    if (eventIdsToUpdate.length > 0) {
       try {
         const admin = getSupabaseAdmin();
-        const { data: currentEvt } = await admin
-          .from('track_events')
-          .select('metadata')
-          .eq('id', body.eventId)
-          .eq('site_id', siteId)
-          .maybeSingle();
+        const now = new Date();
+        const nowIso = now.toISOString();
+        const nowWib = now.toLocaleString('id-ID', {
+          timeZone: 'Asia/Jakarta',
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        }) + ' WIB';
 
-        const updatedMeta = {
-          ...(currentEvt?.metadata || {}),
-          capi_sent: true,
-          capi_sent_at: new Date().toISOString(),
-          capi_pixel_id: selectedPixel.id,
-          capi_pixel_name: selectedPixel.name || selectedPixel.id,
-          capi_event_name: eventName,
-          ...(conversionEvent.value !== undefined ? { capi_value: conversionEvent.value } : {}),
-        };
+        const finalValue = hasNumericValue ? Number(rawVal) : isPurchase ? 0 : undefined;
+        const CHUNK_SIZE = 100;
 
-        await admin
-          .from('track_events')
-          .update({ metadata: updatedMeta })
-          .eq('id', body.eventId)
-          .eq('site_id', siteId);
+        for (let i = 0; i < eventIdsToUpdate.length; i += CHUNK_SIZE) {
+          const chunkIds = eventIdsToUpdate.slice(i, i + CHUNK_SIZE);
+          const { data: chunkEvts, error: fetchErr } = await admin
+            .from('track_events')
+            .select('*')
+            .eq('site_id', siteId)
+            .in('id', chunkIds);
+
+          if (fetchErr) {
+            console.error('[zernio/capi-event] Error fetching chunk:', fetchErr);
+            continue;
+          }
+
+          if (Array.isArray(chunkEvts) && chunkEvts.length > 0) {
+            const rowsToUpsert = chunkEvts.map((evt) => ({
+              ...evt,
+              metadata: {
+                ...(evt.metadata || {}),
+                capi_sent: true,
+                capi_sent_at: nowIso,
+                capi_sent_at_wib: nowWib,
+                capi_pixel_id: selectedPixel.id,
+                capi_pixel_name: selectedPixel.name || selectedPixel.id,
+                capi_event_name: eventName,
+                ...(finalValue !== undefined ? { capi_value: finalValue } : {}),
+              },
+            }));
+
+            const { error: upsertErr } = await admin
+              .from('track_events')
+              .upsert(rowsToUpsert, { onConflict: 'id' });
+
+            if (upsertErr) {
+              console.error('[zernio/capi-event] Error upserting chunk:', upsertErr);
+            }
+          }
+        }
       } catch (err) {
         console.warn('[zernio/capi-event] Could not update event metadata:', err);
       }
@@ -237,7 +296,10 @@ export async function POST(
 
     return NextResponse.json({
       status: true,
-      message: `Event "${eventName}" berhasil dikirim ke Pixel ${selectedPixel.name || selectedPixel.id}`,
+      message: conversionEvents.length === 1
+        ? `Event "${eventName}" berhasil dikirim ke Pixel ${selectedPixel.name || selectedPixel.id}`
+        : `Berhasil mengirim ${conversionEvents.length} event "${eventName}" sekaligus ke Pixel ${selectedPixel.name || selectedPixel.id}`,
+      count: conversionEvents.length,
       data: capiData,
     });
   } catch (err: any) {

@@ -28,7 +28,13 @@ import {
   CheckSquare,
   Square,
   Activity,
-  CheckCheck
+  CheckCheck,
+  Clock,
+  FileSpreadsheet,
+  Upload,
+  Mail,
+  FileText,
+  Trash2
 } from "lucide-react";
 import { C } from "@/lib/colors";
 
@@ -86,9 +92,11 @@ function timeAgoIndo(dateStr: string) {
   return date.toLocaleDateString("id-ID", { timeZone: "Asia/Jakarta" });
 }
 
-function formatWibDate(dateStr: string) {
+function formatWibDate(dateStr?: string | null) {
+  if (!dateStr) return "-";
   try {
     const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return String(dateStr);
     return d.toLocaleString("id-ID", {
       timeZone: "Asia/Jakarta",
       day: "2-digit",
@@ -96,10 +104,23 @@ function formatWibDate(dateStr: string) {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      second: "2-digit",
     }) + " WIB";
   } catch {
-    return dateStr;
+    return String(dateStr);
   }
+}
+
+function getNowWibString() {
+  return new Date().toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }) + " WIB";
 }
 
 export default function TrackEventsClient({
@@ -123,7 +144,8 @@ export default function TrackEventsClient({
 }) {
   const [events, setEvents] = useState<TrackEventItem[]>(initialEvents);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedEventType, setSelectedEventType] = useState("all");
+  const [capiFilter, setCapiFilter] = useState("all");
+  const [audienceFilter, setAudienceFilter] = useState("all");
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
   const [copiedPixelId, setCopiedPixelId] = useState(false);
@@ -143,19 +165,33 @@ export default function TrackEventsClient({
   const [loadingSyncId, setLoadingSyncId] = useState<string | null>(null);
   const [isBulkCapiLoading, setIsBulkCapiLoading] = useState(false);
   const [isBulkSyncLoading, setIsBulkSyncLoading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Modals for CAPI and Audience Sync
-  const [capiModalEvent, setCapiModalEvent] = useState<TrackEventItem | null>(null);
+  const [capiModalTargets, setCapiModalTargets] = useState<TrackEventItem[] | null>(null);
   const [capiEventName, setCapiEventName] = useState("Lead");
   const [capiValue, setCapiValue] = useState("");
-  const [syncModalEvent, setSyncModalEvent] = useState<TrackEventItem | null>(null);
+  const [syncModalTargets, setSyncModalTargets] = useState<TrackEventItem[] | null>(null);
   const [singleSyncAudienceId, setSingleSyncAudienceId] = useState<string>(
     selectedAudiences[0]?.platformAudienceId || selectedAudiences[0]?.id || ""
   );
 
-  // Modal for viewing synced audience phone numbers
+  // Modal for viewing synced audience phone numbers & emails
   const [viewAudienceModal, setViewAudienceModal] = useState<{ id: string; name: string } | null>(null);
   const [copiedAudienceNumbers, setCopiedAudienceNumbers] = useState(false);
+  const [copiedAudienceEmails, setCopiedAudienceEmails] = useState(false);
+
+  // Excel Import State
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importType, setImportType] = useState<"whatsapp" | "email">("whatsapp");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState<{
+    importedCount: number;
+    duplicateCount?: number;
+    skippedCount: number;
+    skippedRows: { row: number; reason: string }[];
+  } | null>(null);
 
   // Global toast message
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
@@ -244,13 +280,39 @@ export default function TrackEventsClient({
         searchQuery === "" ||
         evt.phone_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (evt.sender_name && evt.sender_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (evt.message && evt.message.toLowerCase().includes(searchQuery.toLowerCase()));
+        (evt.message && evt.message.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (evt.metadata?.email && String(evt.metadata.email).toLowerCase().includes(searchQuery.toLowerCase()));
 
-      const matchType = selectedEventType === "all" || evt.event_name === selectedEventType;
+      // CAPI Filter
+      let matchCapi = true;
+      if (capiFilter === "sent") {
+        matchCapi = !!evt.metadata?.capi_sent;
+      } else if (capiFilter === "not_sent") {
+        matchCapi = !evt.metadata?.capi_sent;
+      } else if (capiFilter === "Purchase") {
+        matchCapi = !!evt.metadata?.capi_sent && evt.metadata?.capi_event_name?.toLowerCase() === "purchase";
+      } else if (capiFilter === "Lead") {
+        matchCapi = !!evt.metadata?.capi_sent && (evt.metadata?.capi_event_name?.toLowerCase() === "lead" || !evt.metadata?.capi_event_name);
+      }
 
-      return matchSearch && matchType;
+      // Custom Audience Filter
+      let matchAudience = true;
+      const syncedAudiences = Array.isArray(evt.metadata?.synced_audiences) ? evt.metadata!.synced_audiences : [];
+      if (audienceFilter === "synced") {
+        matchAudience = !!evt.metadata?.audience_synced && syncedAudiences.length > 0;
+      } else if (audienceFilter === "not_synced") {
+        matchAudience = !evt.metadata?.audience_synced || syncedAudiences.length === 0;
+      } else if (audienceFilter !== "all") {
+        matchAudience = syncedAudiences.some((a: any) => {
+          const aId = typeof a === "string" ? a : a?.id || a?.platformAudienceId;
+          const aName = typeof a === "string" ? a : a?.name;
+          return aId === audienceFilter || aName === audienceFilter;
+        });
+      }
+
+      return matchSearch && matchCapi && matchAudience;
     });
-  }, [events, searchQuery, selectedEventType]);
+  }, [events, searchQuery, capiFilter, audienceFilter]);
 
   // Unique phone numbers
   const uniquePhones = useMemo(() => {
@@ -280,13 +342,13 @@ export default function TrackEventsClient({
   // Export to CSV
   const handleExportCsv = () => {
     if (events.length === 0) return;
-    const headers = ["Waktu", "Nomor WhatsApp", "Nama Pengirim", "Event", "Isi Pesan", "Device", "Status"];
+    const headers = ["Waktu", "Nomor WhatsApp", "Nama Pengirim", "Meta Pixel (CAPI)", "Custom Audience", "Device", "Status"];
     const rows = events.map((e) => [
       `"${formatWibDate(e.created_at)}"`,
       `"'${e.phone_number}"`, // formatted so Excel treats as string
       `"${(e.sender_name || "").replace(/"/g, '""')}"`,
-      `"${e.event_name}"`,
-      `"${(e.message || "").replace(/"/g, '""').replace(/\n/g, " ")}"`,
+      `"${e.metadata?.capi_sent ? `CAPI ${e.metadata?.capi_event_name || "Lead"} (${formatWibDate(e.metadata?.capi_sent_at || e.metadata?.capi_sent_at_wib)})` : "Belum Kirim"}"`,
+      `"${Array.isArray(e.metadata?.synced_audiences) && e.metadata.synced_audiences.length > 0 ? e.metadata.synced_audiences.map((a: any) => `${typeof a === 'string' ? a : a?.name || a?.id} (${formatWibDate(typeof a === 'object' && a?.synced_at ? a.synced_at : e.metadata?.audience_synced_at)})`).join("; ") : "Belum Sync"}"`,
       `"${e.device_number || ""}"`,
       `"${e.status || "received"}"`,
     ]);
@@ -298,7 +360,50 @@ export default function TrackEventsClient({
     link.setAttribute("download", `track_events_wa_${siteId}_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+  };
+
+  // Download Excel Template
+  const handleDownloadTemplate = (type: "whatsapp" | "email") => {
+    window.open(`/api/sites/${siteId}/events/template?type=${type}`, "_blank");
+  };
+
+  // Import Excel Handler
+  const handleImportExcel = async () => {
+    if (!importFile) {
+      showToast("Pilih file Excel terlebih dahulu", "error");
+      return;
+    }
+    setIsImporting(true);
+    setImportResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", importFile);
+      fd.append("importType", importType);
+
+      const res = await fetch(`/api/sites/${siteId}/events/import`, {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal mengimpor file Excel");
+      }
+
+      setImportResult({
+        importedCount: data.importedCount,
+        duplicateCount: data.duplicateCount || 0,
+        skippedCount: data.skippedCount || 0,
+        skippedRows: data.skippedRows || [],
+      });
+
+      showToast(data.message || `Berhasil mengimpor ${data.importedCount} data.`);
+      setImportFile(null);
+      await fetchEventsLive(true);
+    } catch (err: any) {
+      showToast(err.message || "Gagal mengimpor file", "error");
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   // Toggle row selection
@@ -318,6 +423,51 @@ export default function TrackEventsClient({
       else next.add(id);
       return next;
     });
+  };
+
+  // Delete selected events
+  const handleDeleteSelected = async () => {
+    const count = selectedRowIds.size;
+    if (count === 0) return;
+
+    const isAll = count === events.length && events.length > 0;
+    const confirm = window.confirm(
+      isAll
+        ? `Apakah Anda yakin ingin menghapus SELURUH (${count}) data kontak/event? Data yang dihapus tidak dapat dikembalikan.`
+        : `Apakah Anda yakin ingin menghapus ${count} data kontak/event yang dipilih? Data yang dihapus tidak dapat dikembalikan.`
+    );
+    if (!confirm) return;
+
+    setIsDeleting(true);
+    try {
+      const res = await fetch(`/api/sites/${siteId}/events`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          isAll
+            ? { deleteAll: true }
+            : { eventIds: Array.from(selectedRowIds) }
+        ),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal menghapus data");
+      }
+
+      if (isAll) {
+        setEvents([]);
+      } else {
+        setEvents((prev) => prev.filter((e) => !selectedRowIds.has(e.id)));
+      }
+      setSelectedRowIds(new Set());
+      showToast(data.message || `Berhasil menghapus ${count} data event.`);
+      await fetchEventsLive();
+    } catch (err: any) {
+      showToast(err.message || "Gagal menghapus data", "error");
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   // Copy Pixel ID
@@ -351,6 +501,7 @@ export default function TrackEventsClient({
           eventId: eventItem.id,
           eventName: customEventName,
           phoneNumber: eventItem.phone_number,
+          email: eventItem.metadata?.email || undefined,
           eventData: eventDataPayload,
         }),
       });
@@ -358,6 +509,10 @@ export default function TrackEventsClient({
       if (!res.ok || !data.status) {
         throw new Error(data.error || "Gagal mengirim CAPI event");
       }
+
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const nowWib = getNowWibString();
 
       setEvents((prev) =>
         prev.map((e) => {
@@ -367,7 +522,8 @@ export default function TrackEventsClient({
               metadata: {
                 ...(e.metadata || {}),
                 capi_sent: true,
-                capi_sent_at: new Date().toISOString(),
+                capi_sent_at: nowIso,
+                capi_sent_at_wib: nowWib,
                 capi_pixel_id: selectedPixel.id,
                 capi_pixel_name: selectedPixel.name || selectedPixel.id,
                 capi_event_name: customEventName,
@@ -379,7 +535,7 @@ export default function TrackEventsClient({
         })
       );
       showToast(`Event "${customEventName}" berhasil dikirim ke Pixel ${selectedPixel.name || selectedPixel.id}!`);
-      setCapiModalEvent(null);
+      setCapiModalTargets(null);
     } catch (err: any) {
       showToast(err.message || "Gagal mengirim CAPI event", "error");
     } finally {
@@ -387,56 +543,81 @@ export default function TrackEventsClient({
     }
   };
 
-  // Send batch CAPI events
-  const handleBulkSendCapi = async (eventName = "Lead") => {
+  // Send batch CAPI events (All at once in a single request)
+  const handleBulkSendCapi = async (items: TrackEventItem[], eventName = "Lead", value?: number) => {
     if (!selectedPixel?.id) {
       showToast("Pilih Pixel Meta Ads terlebih dahulu di menu Pengaturan.", "error");
       return;
     }
-    const selectedItems = events.filter((e) => selectedRowIds.has(e.id));
-    if (selectedItems.length === 0) return;
+    if (items.length === 0) return;
 
     setIsBulkCapiLoading(true);
-    let successCount = 0;
-    let failCount = 0;
 
     const isPurchase = eventName.toLowerCase() === "purchase";
-    const defaultEventData = isPurchase ? { value: 0, currency: "IDR" } : undefined;
+    const hasValue = typeof value === "number" && !isNaN(value);
+    const eventDataPayload = isPurchase
+      ? { value: hasValue ? value : 0, currency: "IDR" }
+      : hasValue
+      ? { value, currency: "IDR" }
+      : undefined;
 
-    for (const item of selectedItems) {
-      try {
-        const res = await fetch(`/api/sites/${siteId}/zernio/capi-event`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            eventId: item.id,
-            eventName,
-            phoneNumber: item.phone_number,
-            eventData: defaultEventData,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok && data.status) {
-          successCount++;
-        } else {
-          failCount++;
-        }
-      } catch {
-        failCount++;
+    try {
+      const payloadItems = items.map((item) => ({
+        eventId: item.id,
+        phoneNumber: item.phone_number,
+        email: item.metadata?.email || undefined,
+      }));
+
+      const res = await fetch(`/api/sites/${siteId}/zernio/capi-event`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: payloadItems,
+          eventName,
+          eventData: eventDataPayload,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.status) {
+        throw new Error(data.error || "Gagal mengirim batch CAPI");
       }
-    }
 
-    await fetchEventsLive();
-    setIsBulkCapiLoading(false);
-    setSelectedRowIds(new Set());
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const nowWib = getNowWibString();
 
-    if (failCount === 0) {
-      showToast(`Berhasil mengirim CAPI (${eventName}) untuk ${successCount} kontak ke Pixel!`);
-    } else {
-      showToast(
-        `Kirim CAPI selesai: ${successCount} berhasil, ${failCount} gagal.`,
-        failCount > successCount ? "error" : "success"
+      setEvents((prev) =>
+        prev.map((e) => {
+          if (items.some((item) => item.id === e.id)) {
+            return {
+              ...e,
+              metadata: {
+                ...(e.metadata || {}),
+                capi_sent: true,
+                capi_sent_at: nowIso,
+                capi_sent_at_wib: nowWib,
+                capi_pixel_id: selectedPixel.id,
+                capi_pixel_name: selectedPixel.name || selectedPixel.id,
+                capi_event_name: eventName,
+                ...(eventDataPayload?.value !== undefined ? { capi_value: eventDataPayload.value } : {}),
+              },
+            };
+          }
+          return e;
+        })
       );
+
+      showToast(
+        data.message || `Berhasil mengirim ${items.length} event "${eventName}" sekaligus ke Pixel!`
+      );
+      setSelectedRowIds(new Set());
+      setCapiModalTargets(null);
+      await fetchEventsLive(false);
+    } catch (err: any) {
+      showToast(err.message || "Gagal mengirim CAPI massal", "error");
+    } finally {
+      setIsBulkCapiLoading(false);
     }
   };
 
@@ -465,6 +646,10 @@ export default function TrackEventsClient({
           audienceId: audId,
           audienceName: audName,
           phoneNumbers: eventItems.map((e) => e.phone_number),
+          users: eventItems.map((e) => ({
+            phone: e.phone_number,
+            email: e.metadata?.email || undefined,
+          })),
           eventIds: eventItems.map((e) => e.id),
         }),
       });
@@ -473,7 +658,17 @@ export default function TrackEventsClient({
         throw new Error(data.error || "Gagal sync nomor ke Custom Audience");
       }
 
-      const targetRecord = { id: audId, name: audName, synced_at: new Date().toISOString() };
+      const now = new Date();
+      const nowIso = now.toISOString();
+      const nowWib = getNowWibString();
+
+      const targetRecord = {
+        id: audId,
+        name: audName,
+        synced_at: nowIso,
+        synced_at_wib: nowWib,
+      };
+
       setEvents((prev) =>
         prev.map((e) => {
           if (eventItems.some((item) => item.id === e.id)) {
@@ -484,7 +679,8 @@ export default function TrackEventsClient({
               metadata: {
                 ...(e.metadata || {}),
                 audience_synced: true,
-                audience_synced_at: new Date().toISOString(),
+                audience_synced_at: nowIso,
+                audience_synced_at_wib: nowWib,
                 synced_audiences: [...filtered, targetRecord],
               },
             };
@@ -493,11 +689,12 @@ export default function TrackEventsClient({
         })
       );
 
-      showToast(`Berhasil menambahkan ${eventItems.length} nomor WA ke Custom Audience "${audName}"!`);
-      setSyncModalEvent(null);
+      showToast(`Berhasil menambahkan ${eventItems.length} kontak ke Custom Audience "${audName}"!`);
+      setSyncModalTargets(null);
       if (eventItems.length > 1) {
         setSelectedRowIds(new Set());
       }
+      await fetchEventsLive(false);
     } catch (err: any) {
       showToast(err.message || "Gagal sync ke Custom Audience", "error");
     } finally {
@@ -764,6 +961,30 @@ create policy "owners delete own track_events" on track_events for delete using 
           >
             <Download size={14} />
             Export CSV
+          </button>
+          <button
+            onClick={() => {
+              setShowImportModal(true);
+              setImportResult(null);
+              setImportFile(null);
+            }}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 7,
+              background: "#F0FDF4",
+              color: "#166534",
+              border: "1px solid rgba(22, 101, 52, 0.35)",
+              borderRadius: 6,
+              padding: "8px 14px",
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all .15s ease",
+            }}
+          >
+            <FileSpreadsheet size={15} color="#166534" />
+            Import Excel
           </button>
         </div>
       </div>
@@ -1124,7 +1345,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                       borderRadius: 3,
                     }}
                   >
-                    Siap Sync WA
+                    Siap Sync WA & Email
                   </span>
                 )}
               </div>
@@ -1132,12 +1353,18 @@ create policy "owners delete own track_events" on track_events for delete using 
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                   {selectedAudiences.map((aud) => {
                     const audIdentifier = aud.platformAudienceId || aud.id;
-                    const syncedCount = events.filter((e) =>
+                    const syncedEvents = events.filter((e) =>
                       e.metadata?.synced_audiences?.some((a: any) => {
                         const aId = typeof a === "string" ? a : a?.id;
                         const aName = typeof a === "string" ? a : a?.name;
                         return aId === audIdentifier || aId === aud.id || aName === aud.name;
                       })
+                    );
+                    const syncedWaCount = syncedEvents.filter(
+                      (e) => e.phone_number && e.phone_number !== "-" && e.phone_number.trim() !== ""
+                    ).length;
+                    const syncedEmailCount = syncedEvents.filter(
+                      (e) => Boolean(e.metadata?.email && e.metadata.email.trim() !== "")
                     ).length;
 
                     return (
@@ -1160,7 +1387,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                           transition: "all 0.15s",
                           boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                         }}
-                        title={`Klik untuk melihat ${syncedCount} nomor WA di audiens "${aud.name}"`}
+                        title={`Klik untuk melihat ${syncedWaCount} nomor WA & ${syncedEmailCount} email di audiens "${aud.name}"`}
                       >
                         <Users size={12} color="#2563EB" />
                         <span style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1168,15 +1395,27 @@ create policy "owners delete own track_events" on track_events for delete using 
                         </span>
                         <span
                           style={{
-                            background: syncedCount > 0 ? "#DBEAFE" : "#F3F4F6",
-                            color: syncedCount > 0 ? "#1E40AF" : C.muted,
+                            background: syncedWaCount > 0 ? "#DBEAFE" : "#F3F4F6",
+                            color: syncedWaCount > 0 ? "#1E40AF" : C.muted,
                             fontSize: 10,
                             fontWeight: 700,
                             padding: "1px 6px",
                             borderRadius: 10,
                           }}
                         >
-                          {syncedCount} WA
+                          {syncedWaCount} WA
+                        </span>
+                        <span
+                          style={{
+                            background: syncedEmailCount > 0 ? "#EDE9FE" : "#F3F4F6",
+                            color: syncedEmailCount > 0 ? "#6D28D9" : C.muted,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: "1px 6px",
+                            borderRadius: 10,
+                          }}
+                        >
+                          {syncedEmailCount} Email
                         </span>
                       </button>
                     );
@@ -1216,12 +1455,18 @@ create policy "owners delete own track_events" on track_events for delete using 
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <CheckSquare size={18} color="#60A5FA" />
             <div>
-              <span style={{ fontSize: 13.5, fontWeight: 700 }}>
-                {selectedRowIds.size} event dipilih
-              </span>
-              <span style={{ fontSize: 12, color: "#94A3B8", marginLeft: 8 }}>
-                ({Array.from(new Set(events.filter((e) => selectedRowIds.has(e.id)).map((e) => e.phone_number))).length} nomor WA unik)
-              </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 13.5, fontWeight: 700 }}>
+                  {selectedRowIds.size} event dipilih
+                </span>
+                <span style={{ fontSize: 12, color: "#94A3B8" }}>
+                  ({Array.from(new Set(events.filter((e) => selectedRowIds.has(e.id)).map((e) => e.phone_number))).length} nomor WA unik)
+                </span>
+                <span style={{ fontSize: 11.5, color: "#60A5FA", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Clock size={11} />
+                  {getNowWibString()}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1231,7 +1476,10 @@ create policy "owners delete own track_events" on track_events for delete using 
               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                 <select
                   value={targetAudienceId}
-                  onChange={(e) => setTargetAudienceId(e.target.value)}
+                  onChange={(e) => {
+                    setTargetAudienceId(e.target.value);
+                    setSingleSyncAudienceId(e.target.value);
+                  }}
                   style={{
                     background: "#1E293B",
                     color: "#FFFFFF",
@@ -1240,8 +1488,10 @@ create policy "owners delete own track_events" on track_events for delete using 
                     padding: "6px 10px",
                     fontSize: 12.5,
                     outline: "none",
-                    maxWidth: 180,
+                    maxWidth: 190,
+                    cursor: "pointer",
                   }}
+                  title="Pilih Target Custom Audience"
                 >
                   {selectedAudiences.map((aud) => (
                     <option key={aud.platformAudienceId || aud.id} value={aud.platformAudienceId || aud.id}>
@@ -1253,7 +1503,11 @@ create policy "owners delete own track_events" on track_events for delete using 
                 <button
                   onClick={() => {
                     const items = events.filter((e) => selectedRowIds.has(e.id));
-                    handleSyncAudience(items, targetAudienceId);
+                    if (items.length === 0) return;
+                    if (targetAudienceId) {
+                      setSingleSyncAudienceId(targetAudienceId);
+                    }
+                    setSyncModalTargets(items);
                   }}
                   disabled={isBulkSyncLoading}
                   style={{
@@ -1269,9 +1523,10 @@ create policy "owners delete own track_events" on track_events for delete using 
                     fontWeight: 600,
                     cursor: isBulkSyncLoading ? "wait" : "pointer",
                   }}
+                  title="Kirim semua kontak yang dipilih sekaligus ke Custom Audience"
                 >
                   {isBulkSyncLoading ? <Loader2 size={13} className="spin" /> : <Users size={13} />}
-                  Sync WA ke Audience
+                  Sync WA ke Audience ({selectedRowIds.size})
                 </button>
               </div>
             )}
@@ -1279,7 +1534,11 @@ create policy "owners delete own track_events" on track_events for delete using 
             {/* Bulk CAPI button */}
             {selectedPixel && (
               <button
-                onClick={() => handleBulkSendCapi("Lead")}
+                onClick={() => {
+                  const selectedItems = events.filter((e) => selectedRowIds.has(e.id));
+                  if (selectedItems.length === 0) return;
+                  setCapiModalTargets(selectedItems);
+                }}
                 disabled={isBulkCapiLoading}
                 style={{
                   display: "inline-flex",
@@ -1296,9 +1555,33 @@ create policy "owners delete own track_events" on track_events for delete using 
                 }}
               >
                 {isBulkCapiLoading ? <Loader2 size={13} className="spin" /> : <Activity size={13} />}
-                Kirim CAPI (Lead)
+                Kirim CAPI ({selectedRowIds.size})
               </button>
             )}
+
+            {/* Delete button when checked */}
+            <button
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                background: "#DC2626",
+                color: "#FFFFFF",
+                border: "none",
+                borderRadius: 6,
+                padding: "7px 13px",
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: isDeleting ? "wait" : "pointer",
+                transition: "background .15s ease",
+              }}
+              title="Hapus semua kontak/event yang dipilih"
+            >
+              {isDeleting ? <Loader2 size={13} className="spin" /> : <Trash2 size={13} />}
+              Hapus ({selectedRowIds.size})
+            </button>
 
             <button
               onClick={() => setSelectedRowIds(new Set())}
@@ -1368,25 +1651,80 @@ create policy "owners delete own track_events" on track_events for delete using 
             )}
           </div>
 
+          {/* Filter Meta Pixel (CAPI) */}
           <select
-            value={selectedEventType}
-            onChange={(e) => setSelectedEventType(e.target.value)}
+            value={capiFilter}
+            onChange={(e) => setCapiFilter(e.target.value)}
             style={{
               background: "#FFFFFF",
-              border: `1px solid ${C.line}`,
+              border: `1px solid ${capiFilter !== "all" ? "#7C3AED" : C.line}`,
               borderRadius: 6,
               padding: "7px 12px",
               fontSize: 13,
-              color: C.ink,
+              color: capiFilter !== "all" ? "#7C3AED" : C.ink,
+              fontWeight: capiFilter !== "all" ? 600 : 400,
               cursor: "pointer",
               outline: "none",
             }}
           >
-            <option value="all">Semua Tipe Event</option>
-            <option value="whatsapp_chat">whatsapp_chat</option>
-            <option value="whatsapp_order_intent">whatsapp_order_intent</option>
-            <option value="whatsapp_lead_inquiry">whatsapp_lead_inquiry</option>
+            <option value="all">Semua Meta Pixel (CAPI)</option>
+            <option value="sent">✓ Sudah Kirim CAPI (Semua)</option>
+            <option value="not_sent">Belum Kirim CAPI</option>
+            <option value="Lead">CAPI: Lead</option>
+            <option value="Purchase">CAPI: Purchase</option>
           </select>
+
+          {/* Filter Custom Audience */}
+          <select
+            value={audienceFilter}
+            onChange={(e) => setAudienceFilter(e.target.value)}
+            style={{
+              background: "#FFFFFF",
+              border: `1px solid ${audienceFilter !== "all" ? "#2563EB" : C.line}`,
+              borderRadius: 6,
+              padding: "7px 12px",
+              fontSize: 13,
+              color: audienceFilter !== "all" ? "#2563EB" : C.ink,
+              fontWeight: audienceFilter !== "all" ? 600 : 400,
+              cursor: "pointer",
+              outline: "none",
+            }}
+          >
+            <option value="all">Semua Custom Audience</option>
+            <option value="synced">✓ Sudah Sync Audience (Semua)</option>
+            <option value="not_synced">Belum Sync Audience</option>
+            {selectedAudiences.length > 0 && (
+              <optgroup label="Audiens Terpilih">
+                {selectedAudiences.map((aud) => (
+                  <option key={aud.platformAudienceId || aud.id} value={aud.name}>
+                    Audiens: {aud.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+
+          {(capiFilter !== "all" || audienceFilter !== "all" || searchQuery !== "") && (
+            <button
+              type="button"
+              onClick={() => {
+                setCapiFilter("all");
+                setAudienceFilter("all");
+                setSearchQuery("");
+              }}
+              style={{
+                background: "transparent",
+                border: `1px solid ${C.line}`,
+                borderRadius: 6,
+                padding: "6px 10px",
+                fontSize: 12,
+                color: C.muted,
+                cursor: "pointer",
+              }}
+            >
+              Reset Filter
+            </button>
+          )}
         </div>
 
         <div style={{ fontSize: 12.5, color: C.muted }}>
@@ -1422,12 +1760,6 @@ create policy "owners delete own track_events" on track_events for delete using 
                 <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
                   Nama Kontak
                 </th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
-                  Event
-                </th>
-                <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: C.faint, fontWeight: 600, textTransform: "uppercase" }}>
-                  Pesan Chat
-                </th>
                 <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, color: "#7C3AED", fontWeight: 700, textTransform: "uppercase" }}>
                   Meta Pixel (CAPI)
                 </th>
@@ -1445,7 +1777,7 @@ create policy "owners delete own track_events" on track_events for delete using 
             <tbody>
               {filteredEvents.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ padding: "48px 24px", textAlign: "center", color: C.muted }}>
+                  <td colSpan={7} style={{ padding: "48px 24px", textAlign: "center", color: C.muted }}>
                     <div style={{ display: "inline-flex", padding: 14, borderRadius: "50%", background: C.paper, marginBottom: 12 }}>
                       <MessageSquare size={28} color={C.faint} />
                     </div>
@@ -1496,26 +1828,43 @@ create policy "owners delete own track_events" on track_events for delete using 
                         />
                       </td>
 
-                      {/* Phone Number */}
+                      {/* Phone Number & Email */}
                       <td style={{ padding: "14px 16px" }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                          <span className="mono" style={{ fontSize: 13.5, fontWeight: 700, color: C.ink }}>
-                            {formatPhoneDisplay(evt.phone_number)}
-                          </span>
-                          <button
-                            onClick={() => copyPhone(evt.phone_number)}
-                            title="Salin Nomor"
+                          <span
+                            className="mono"
                             style={{
-                              background: "transparent",
-                              border: "none",
-                              cursor: "pointer",
-                              padding: 2,
-                              color: copiedPhone === evt.phone_number ? C.moss : C.faint,
+                              fontSize: 13.5,
+                              fontWeight: 700,
+                              color: evt.phone_number && evt.phone_number !== "-" ? C.ink : C.muted,
                             }}
                           >
-                            {copiedPhone === evt.phone_number ? <Check size={13} /> : <Copy size={13} />}
-                          </button>
+                            {evt.phone_number && evt.phone_number !== "-"
+                              ? formatPhoneDisplay(evt.phone_number)
+                              : (evt.metadata?.email ? "Tanpa No WA" : "-")}
+                          </span>
+                          {evt.phone_number && evt.phone_number !== "-" && (
+                            <button
+                              onClick={() => copyPhone(evt.phone_number)}
+                              title="Salin Nomor"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                cursor: "pointer",
+                                padding: 2,
+                                color: copiedPhone === evt.phone_number ? C.moss : C.faint,
+                              }}
+                            >
+                              {copiedPhone === evt.phone_number ? <Check size={13} /> : <Copy size={13} />}
+                            </button>
+                          )}
                         </div>
+                        {evt.metadata?.email && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3, fontSize: 11, color: "#2563EB" }}>
+                            <Mail size={11} color="#3B82F6" />
+                            <span style={{ wordBreak: "break-all" }}>{evt.metadata.email}</span>
+                          </div>
+                        )}
                         {evt.device_number && (
                           <div style={{ fontSize: 11, color: C.faint, marginTop: 2 }}>
                             Device: {evt.device_number}
@@ -1532,74 +1881,10 @@ create policy "owners delete own track_events" on track_events for delete using 
                         )}
                       </td>
 
-                      {/* Event Badge */}
-                      <td style={{ padding: "14px 16px" }}>
-                        <span
-                          className="mono"
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            padding: "3px 8px",
-                            borderRadius: 4,
-                            fontSize: 11,
-                            fontWeight: 600,
-                            background:
-                              evt.event_name === "whatsapp_order_intent"
-                                ? `${C.brass}18`
-                                : evt.event_name === "whatsapp_lead_inquiry"
-                                ? `${C.red}12`
-                                : `${C.moss}15`,
-                            color:
-                              evt.event_name === "whatsapp_order_intent"
-                                ? C.brass
-                                : evt.event_name === "whatsapp_lead_inquiry"
-                                ? C.red
-                                : C.moss,
-                          }}
-                        >
-                          <span
-                            style={{
-                              width: 5,
-                              height: 5,
-                              borderRadius: "50%",
-                              background: "currentColor",
-                            }}
-                          />
-                          {evt.event_name}
-                        </span>
-                      </td>
-
-                      {/* Message Snippet */}
-                      <td style={{ padding: "14px 16px", maxWidth: 260 }}>
-                        {evt.message ? (
-                          <div
-                            onClick={() => setSelectedMessage(evt)}
-                            title="Klik untuk membaca pesan penuh"
-                            style={{
-                              fontSize: 13,
-                              color: C.ink,
-                              whiteSpace: "nowrap",
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              cursor: "pointer",
-                              textDecoration: "underline",
-                              textDecorationColor: C.line,
-                            }}
-                          >
-                            &quot;{evt.message}&quot;
-                          </div>
-                        ) : (
-                          <span style={{ color: C.faint, fontSize: 12, fontStyle: "italic" }}>
-                            [Tidak ada teks / media]
-                          </span>
-                        )}
-                      </td>
-
                       {/* Meta Pixel (CAPI) Column */}
                       <td style={{ padding: "14px 16px" }}>
                         {evt.metadata?.capi_sent ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3.5, alignItems: "flex-start" }}>
                             <span
                               style={{
                                 display: "inline-flex",
@@ -1614,13 +1899,29 @@ create policy "owners delete own track_events" on track_events for delete using 
                                 borderRadius: 4,
                                 whiteSpace: "nowrap",
                               }}
-                              title={`Terkirim ke Pixel: ${evt.metadata.capi_pixel_name || evt.metadata.capi_pixel_id || ""} (${evt.metadata.capi_sent_at ? formatWibDate(evt.metadata.capi_sent_at) : "-"})`}
+                              title={`Terkirim ke Pixel: ${evt.metadata.capi_pixel_name || evt.metadata.capi_pixel_id || ""} (${formatWibDate(evt.metadata.capi_sent_at || evt.metadata.capi_sent_at_wib)})`}
                             >
                               <CheckCircle2 size={12} color={C.moss} />
                               CAPI {evt.metadata.capi_event_name || "Lead"}
                             </span>
+                            {(evt.metadata?.capi_sent_at || evt.metadata?.capi_sent_at_wib) && (
+                              <span
+                                style={{
+                                  fontSize: 10.5,
+                                  color: C.muted,
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: 3.5,
+                                  lineHeight: 1.2,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                <Clock size={10.5} color={C.faint} />
+                                {formatWibDate(evt.metadata.capi_sent_at || evt.metadata.capi_sent_at_wib)}
+                              </span>
+                            )}
                             <button
-                              onClick={() => setCapiModalEvent(evt)}
+                              onClick={() => setCapiModalTargets([evt])}
                               style={{
                                 background: "transparent",
                                 border: "none",
@@ -1641,7 +1942,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                                 showToast("Pilih Pixel Meta Ads di Pengaturan terlebih dahulu", "error");
                                 return;
                               }
-                              setCapiModalEvent(evt);
+                              setCapiModalTargets([evt]);
                             }}
                             disabled={loadingCapiId === evt.id}
                             title={selectedPixel ? `Kirim CAPI Event ke Pixel: ${selectedPixel.name}` : "Pilih Pixel di Pengaturan"}
@@ -1674,38 +1975,58 @@ create policy "owners delete own track_events" on track_events for delete using 
                       {/* Custom Audience Column */}
                       <td style={{ padding: "14px 16px" }}>
                         {evt.metadata?.audience_synced && Array.isArray(evt.metadata.synced_audiences) && evt.metadata.synced_audiences.length > 0 ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                               {evt.metadata.synced_audiences.map((aud: any, idx: number) => {
                                 const name = typeof aud === "string" ? aud : aud?.name || aud?.id;
                                 const audId = typeof aud === "string" ? aud : aud?.id || aud?.platformAudienceId || name;
+                                const syncedTime = typeof aud === "object" && (aud?.synced_at || aud?.synced_at_wib)
+                                  ? (aud.synced_at || aud.synced_at_wib)
+                                  : (evt.metadata?.audience_synced_at || evt.metadata?.audience_synced_at_wib);
                                 return (
-                                  <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => setViewAudienceModal({ id: audId, name })}
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: 4,
-                                      background: "#EFF6FF",
-                                      border: "1px solid rgba(37, 99, 235, 0.25)",
-                                      color: "#1D4ED8",
-                                      fontSize: 10.5,
-                                      fontWeight: 600,
-                                      padding: "2px 7px",
-                                      borderRadius: 4,
-                                      maxWidth: 140,
-                                      overflow: "hidden",
-                                      textOverflow: "ellipsis",
-                                      whiteSpace: "nowrap",
-                                      cursor: "pointer",
-                                    }}
-                                    title={`Tersinkron ke ${name}. Klik untuk lihat daftar nomor.`}
-                                  >
-                                    <Users size={10} />
-                                    {name}
-                                  </button>
+                                  <div key={idx} style={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewAudienceModal({ id: audId, name })}
+                                      style={{
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: 4,
+                                        background: "#EFF6FF",
+                                        border: "1px solid rgba(37, 99, 235, 0.25)",
+                                        color: "#1D4ED8",
+                                        fontSize: 10.5,
+                                        fontWeight: 600,
+                                        padding: "2px 7px",
+                                        borderRadius: 4,
+                                        maxWidth: 160,
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
+                                        cursor: "pointer",
+                                      }}
+                                      title={`Tersinkron ke ${name}. Klik untuk lihat daftar nomor.`}
+                                    >
+                                      <Users size={10} />
+                                      {name}
+                                    </button>
+                                    {syncedTime && (
+                                      <span
+                                        style={{
+                                          fontSize: 10,
+                                          color: C.muted,
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: 3,
+                                          lineHeight: 1.2,
+                                          whiteSpace: "nowrap",
+                                        }}
+                                      >
+                                        <Clock size={9.5} color={C.faint} />
+                                        {formatWibDate(syncedTime)}
+                                      </span>
+                                    )}
+                                  </div>
                                 );
                               })}
                             </div>
@@ -1715,7 +2036,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                                   showToast("Pilih Custom Audience di Pengaturan terlebih dahulu", "error");
                                   return;
                                 }
-                                setSyncModalEvent(evt);
+                                setSyncModalTargets([evt]);
                               }}
                               style={{
                                 background: "transparent",
@@ -1740,7 +2061,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                               if (selectedAudiences.length === 1) {
                                 handleSyncAudience([evt], selectedAudiences[0].platformAudienceId || selectedAudiences[0].id);
                               } else {
-                                setSyncModalEvent(evt);
+                                setSyncModalTargets([evt]);
                               }
                             }}
                             disabled={loadingSyncId === evt.id}
@@ -2050,8 +2371,8 @@ create policy "owners delete own track_events" on track_events for delete using 
         </div>
       )}
 
-      {/* Modal: Single CAPI Event Sender */}
-      {capiModalEvent && (
+      {/* Modal: CAPI Event Sender (Single & Bulk) */}
+      {capiModalTargets && capiModalTargets.length > 0 && (
         <div
           style={{
             position: "fixed",
@@ -2063,7 +2384,7 @@ create policy "owners delete own track_events" on track_events for delete using 
             justifyContent: "center",
             padding: 16,
           }}
-          onClick={() => setCapiModalEvent(null)}
+          onClick={() => setCapiModalTargets(null)}
         >
           <div
             style={{
@@ -2084,11 +2405,11 @@ create policy "owners delete own track_events" on track_events for delete using 
                   Meta Conversions API (CAPI)
                 </div>
                 <h3 style={{ fontSize: 17, fontWeight: 700, margin: "4px 0 0", color: C.ink }}>
-                  Kirim CAPI ke Meta Pixel
+                  {capiModalTargets.length === 1 ? "Kirim CAPI ke Meta Pixel" : `Kirim CAPI (${capiModalTargets.length} Kontak)`}
                 </h3>
               </div>
               <button
-                onClick={() => setCapiModalEvent(null)}
+                onClick={() => setCapiModalTargets(null)}
                 style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
               >
                 <X size={18} color={C.muted} />
@@ -2113,10 +2434,26 @@ create policy "owners delete own track_events" on track_events for delete using 
                 <span style={{ color: C.muted }}>Pixel ID:</span>
                 <span className="mono" style={{ color: C.ink }}>{selectedPixel?.id || "-"}</span>
               </div>
+              {capiModalTargets.length === 1 ? (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: C.muted }}>Kontak WhatsApp:</span>
+                  <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
+                    {formatPhoneDisplay(capiModalTargets[0].phone_number)}
+                  </span>
+                </div>
+              ) : (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: C.muted }}>Jumlah Kontak:</span>
+                  <span style={{ fontWeight: 600, color: C.ink }}>
+                    {capiModalTargets.length} kontak terpilih ({Array.from(new Set(capiModalTargets.map((e) => e.phone_number))).length} nomor unik)
+                  </span>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: C.muted }}>Kontak WhatsApp:</span>
-                <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
-                  {formatPhoneDisplay(capiModalEvent.phone_number)}
+                <span style={{ color: C.muted }}>Waktu Kirim (Asia/Jakarta):</span>
+                <span style={{ fontWeight: 600, color: "#7C3AED", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Clock size={12} />
+                  Hari ini ({getNowWibString()})
                 </span>
               </div>
             </div>
@@ -2175,13 +2512,15 @@ create policy "owners delete own track_events" on track_events for delete using 
             )}
 
             <p style={{ fontSize: 12, color: C.faint, lineHeight: 1.5, marginBottom: 18 }}>
-              Nomor WhatsApp akan otomatis di-hash (SHA256) secara aman sebelum dikirimkan ke Meta Conversions API melalui Zernio.
+              {capiModalTargets.length === 1
+                ? "Nomor WhatsApp akan otomatis di-hash (SHA256) secara aman sebelum dikirimkan ke Meta Conversions API melalui Zernio."
+                : `Seluruh ${capiModalTargets.length} nomor WhatsApp akan otomatis di-hash (SHA256) secara aman sebelum dikirimkan ke Meta Conversions API melalui Zernio.`}
             </p>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button
                 type="button"
-                onClick={() => setCapiModalEvent(null)}
+                onClick={() => setCapiModalTargets(null)}
                 style={{
                   padding: "8px 14px",
                   background: "transparent",
@@ -2196,11 +2535,18 @@ create policy "owners delete own track_events" on track_events for delete using 
               </button>
               <button
                 type="button"
-                disabled={loadingCapiId === capiModalEvent.id}
+                disabled={
+                  isBulkCapiLoading ||
+                  (capiModalTargets.length === 1 && loadingCapiId === capiModalTargets[0].id)
+                }
                 onClick={() => {
                   const trimmed = capiValue.trim();
                   const val = trimmed !== "" && !isNaN(Number(trimmed)) ? parseFloat(trimmed) : undefined;
-                  handleSendCapi(capiModalEvent, capiEventName, val);
+                  if (capiModalTargets.length === 1) {
+                    handleSendCapi(capiModalTargets[0], capiEventName, val);
+                  } else {
+                    handleBulkSendCapi(capiModalTargets, capiEventName, val);
+                  }
                 }}
                 style={{
                   padding: "8px 18px",
@@ -2210,13 +2556,17 @@ create policy "owners delete own track_events" on track_events for delete using 
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#FFFFFF",
-                  cursor: loadingCapiId === capiModalEvent.id ? "wait" : "pointer",
+                  cursor:
+                    isBulkCapiLoading || (capiModalTargets.length === 1 && loadingCapiId === capiModalTargets[0].id)
+                      ? "wait"
+                      : "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
                 }}
               >
-                {loadingCapiId === capiModalEvent.id ? (
+                {isBulkCapiLoading ||
+                (capiModalTargets.length === 1 && loadingCapiId === capiModalTargets[0].id) ? (
                   <>
                     <Loader2 size={13} className="spin" /> Mengirim CAPI...
                   </>
@@ -2231,8 +2581,8 @@ create policy "owners delete own track_events" on track_events for delete using 
         </div>
       )}
 
-      {/* Modal: Single Audience Sync Selector */}
-      {syncModalEvent && (
+      {/* Modal: Audience Sync Selector (Single & Bulk) */}
+      {syncModalTargets && syncModalTargets.length > 0 && (
         <div
           style={{
             position: "fixed",
@@ -2244,7 +2594,7 @@ create policy "owners delete own track_events" on track_events for delete using 
             justifyContent: "center",
             padding: 16,
           }}
-          onClick={() => setSyncModalEvent(null)}
+          onClick={() => setSyncModalTargets(null)}
         >
           <div
             style={{
@@ -2265,11 +2615,11 @@ create policy "owners delete own track_events" on track_events for delete using 
                   Meta Custom Audience
                 </div>
                 <h3 style={{ fontSize: 17, fontWeight: 700, margin: "4px 0 0", color: C.ink }}>
-                  Masukkan Nomor WA ke Custom Audience
+                  {syncModalTargets.length === 1 ? "Masukkan Nomor WA ke Custom Audience" : `Sync WA ke Custom Audience Sekaligus (${syncModalTargets.length} Kontak)`}
                 </h3>
               </div>
               <button
-                onClick={() => setSyncModalEvent(null)}
+                onClick={() => setSyncModalTargets(null)}
                 style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
               >
                 <X size={18} color={C.muted} />
@@ -2286,14 +2636,32 @@ create policy "owners delete own track_events" on track_events for delete using 
                 marginBottom: 16,
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ color: C.muted }}>Kontak:</span>
-                <strong style={{ color: C.ink }}>{syncModalEvent.sender_name || "Tanpa Nama"}</strong>
-              </div>
+              {syncModalTargets.length === 1 ? (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ color: C.muted }}>Kontak:</span>
+                    <strong style={{ color: C.ink }}>{syncModalTargets[0].sender_name || "Tanpa Nama"}</strong>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ color: C.muted }}>Nomor WhatsApp:</span>
+                    <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
+                      {formatPhoneDisplay(syncModalTargets[0].phone_number)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ color: C.muted }}>Jumlah Kontak (1 Batch):</span>
+                  <span style={{ fontWeight: 600, color: C.ink }}>
+                    {syncModalTargets.length} kontak ({Array.from(new Set(syncModalTargets.map((e) => e.phone_number))).length} nomor unik)
+                  </span>
+                </div>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ color: C.muted }}>Nomor WhatsApp:</span>
-                <span className="mono" style={{ fontWeight: 600, color: C.ink }}>
-                  {formatPhoneDisplay(syncModalEvent.phone_number)}
+                <span style={{ color: C.muted }}>Waktu Sinkron (Asia/Jakarta):</span>
+                <span style={{ fontWeight: 600, color: "#2563EB", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  <Clock size={12} />
+                  Hari ini ({getNowWibString()})
                 </span>
               </div>
             </div>
@@ -2341,13 +2709,15 @@ create policy "owners delete own track_events" on track_events for delete using 
             </div>
 
             <p style={{ fontSize: 12, color: C.faint, lineHeight: 1.5, marginBottom: 18 }}>
-              Nomor WhatsApp akan di-hash (SHA256) dan disinkronkan ke audience Meta untuk keperluan retargeting iklan Anda.
+              {syncModalTargets.length === 1
+                ? "Nomor WhatsApp akan di-hash (SHA256) dan disinkronkan ke audience Meta untuk keperluan retargeting iklan Anda."
+                : `Seluruh ${syncModalTargets.length} kontak akan dipaketkan dalam 1 request batch, di-hash (SHA256), dan disinkronkan sekaligus ke Meta Custom Audience.`}
             </p>
 
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button
                 type="button"
-                onClick={() => setSyncModalEvent(null)}
+                onClick={() => setSyncModalTargets(null)}
                 style={{
                   padding: "8px 14px",
                   background: "transparent",
@@ -2362,9 +2732,13 @@ create policy "owners delete own track_events" on track_events for delete using 
               </button>
               <button
                 type="button"
-                disabled={loadingSyncId === syncModalEvent.id || !singleSyncAudienceId}
+                disabled={
+                  isBulkSyncLoading ||
+                  (syncModalTargets.length === 1 && loadingSyncId === syncModalTargets[0].id) ||
+                  !singleSyncAudienceId
+                }
                 onClick={() => {
-                  handleSyncAudience([syncModalEvent], singleSyncAudienceId);
+                  handleSyncAudience(syncModalTargets, singleSyncAudienceId);
                 }}
                 style={{
                   padding: "8px 18px",
@@ -2374,19 +2748,23 @@ create policy "owners delete own track_events" on track_events for delete using 
                   fontSize: 13,
                   fontWeight: 600,
                   color: "#FFFFFF",
-                  cursor: loadingSyncId === syncModalEvent.id ? "wait" : "pointer",
+                  cursor:
+                    isBulkSyncLoading || (syncModalTargets.length === 1 && loadingSyncId === syncModalTargets[0].id)
+                      ? "wait"
+                      : "pointer",
                   display: "flex",
                   alignItems: "center",
                   gap: 6,
                 }}
               >
-                {loadingSyncId === syncModalEvent.id ? (
+                {isBulkSyncLoading ||
+                (syncModalTargets.length === 1 && loadingSyncId === syncModalTargets[0].id) ? (
                   <>
-                    <Loader2 size={13} className="spin" /> Sinkronisasi...
+                    <Loader2 size={13} className="spin" /> Sinkronisasi Sekaligus...
                   </>
                 ) : (
                   <>
-                    <Users size={13} /> Masukkan ke Audience
+                    <Users size={13} /> Sinkronkan Sekaligus ({syncModalTargets.length} Kontak)
                   </>
                 )}
               </button>
@@ -2395,7 +2773,7 @@ create policy "owners delete own track_events" on track_events for delete using 
         </div>
       )}
 
-      {/* MODAL LIHAT DAFTAR NOMOR DI CUSTOM AUDIENCE */}
+      {/* MODAL LIHAT DAFTAR NOMOR & EMAIL DI CUSTOM AUDIENCE */}
       {viewAudienceModal && (() => {
         const matchingEvents = events.filter((e) =>
           e.metadata?.synced_audiences?.some((a: any) => {
@@ -2404,13 +2782,25 @@ create policy "owners delete own track_events" on track_events for delete using 
             return aId === viewAudienceModal.id || aName === viewAudienceModal.name;
           })
         );
-        const uniquePhonesList = Array.from(new Set(matchingEvents.map((e) => e.phone_number)));
+        const uniquePhonesList = Array.from(
+          new Set(matchingEvents.map((e) => e.phone_number).filter((p) => Boolean(p && p !== "-" && p.trim() !== "")))
+        );
+        const uniqueEmailsList = Array.from(
+          new Set(matchingEvents.map((e) => e.metadata?.email).filter((em) => Boolean(em && em.trim() !== "")))
+        );
 
         const handleCopyAllNumbers = () => {
           if (uniquePhonesList.length === 0) return;
           navigator.clipboard.writeText(uniquePhonesList.join("\n"));
           setCopiedAudienceNumbers(true);
           setTimeout(() => setCopiedAudienceNumbers(false), 2000);
+        };
+
+        const handleCopyAllEmails = () => {
+          if (uniqueEmailsList.length === 0) return;
+          navigator.clipboard.writeText(uniqueEmailsList.join("\n"));
+          setCopiedAudienceEmails(true);
+          setTimeout(() => setCopiedAudienceEmails(false), 2000);
         };
 
         return (
@@ -2434,7 +2824,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                 background: "#FFFFFF",
                 borderRadius: 10,
                 width: "100%",
-                maxWidth: 540,
+                maxWidth: 560,
                 boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
                 overflow: "hidden",
                 maxHeight: "85vh",
@@ -2458,7 +2848,7 @@ create policy "owners delete own track_events" on track_events for delete using 
                       Daftar Kontak: {viewAudienceModal.name}
                     </h3>
                     <span style={{ fontSize: 11.5, color: C.muted }}>
-                      {uniquePhonesList.length} nomor WhatsApp tersinkron ke Custom Audience ini
+                      {uniquePhonesList.length} nomor WA & {uniqueEmailsList.length} email tersinkron ke Custom Audience ini
                     </span>
                   </div>
                 </div>
@@ -2485,12 +2875,12 @@ create policy "owners delete own track_events" on track_events for delete using 
                     marginBottom: 14,
                   }}
                 >
-                  🔒 <strong>Info Meta Ads:</strong> Di dashboard Meta Ads Manager (Facebook), Meta secara sengaja menyembunyikan nomor telepon asli demi privasi (GDPR) dan hanya menampilkan estimasi match rate. Di bawah ini adalah daftar nomor WhatsApp asli yang telah masuk ke audiens ini dari sistem Anda.
+                  🔒 <strong>Info Meta Ads:</strong> Di dashboard Meta Ads Manager (Facebook), Meta menyembunyikan identitas asli demi privasi (GDPR) dan hanya menampilkan estimasi match rate. Di bawah ini adalah daftar nomor WhatsApp dan email asli yang telah masuk ke audiens ini dari sistem Anda.
                 </div>
 
                 {matchingEvents.length === 0 ? (
                   <div style={{ textAlign: "center", padding: "30px 16px", color: C.muted, fontSize: 13 }}>
-                    Belum ada nomor WhatsApp yang disinkronkan ke audiens ini.
+                    Belum ada kontak (nomor WhatsApp atau email) yang disinkronkan ke audiens ini.
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -2500,7 +2890,13 @@ create policy "owners delete own track_events" on track_events for delete using 
                         const aName = typeof a === "string" ? a : a?.name;
                         return aId === viewAudienceModal.id || aName === viewAudienceModal.name;
                       });
-                      const syncedTime = typeof syncRecord === "object" && syncRecord?.synced_at ? syncRecord.synced_at : evt.metadata?.audience_synced_at;
+                      const syncedTime =
+                        typeof syncRecord === "object" && (syncRecord?.synced_at || syncRecord?.synced_at_wib)
+                          ? syncRecord.synced_at || syncRecord.synced_at_wib
+                          : evt.metadata?.audience_synced_at || evt.metadata?.audience_synced_at_wib;
+
+                      const hasPhone = Boolean(evt.phone_number && evt.phone_number !== "-" && evt.phone_number.trim() !== "");
+                      const hasEmail = Boolean(evt.metadata?.email && evt.metadata.email.trim() !== "");
 
                       return (
                         <div
@@ -2517,39 +2913,59 @@ create policy "owners delete own track_events" on track_events for delete using 
                           }}
                         >
                           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <strong style={{ fontFamily: "monospace", color: C.ink }}>
-                                {formatPhoneDisplay(evt.phone_number)}
-                              </strong>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              {hasPhone && (
+                                <strong style={{ fontFamily: "monospace", color: C.ink }}>
+                                  {formatPhoneDisplay(evt.phone_number)}
+                                </strong>
+                              )}
+                              {hasEmail && (
+                                <span
+                                  style={{
+                                    fontSize: 11,
+                                    background: "#EDE9FE",
+                                    color: "#6D28D9",
+                                    fontWeight: 600,
+                                    padding: "2px 7px",
+                                    borderRadius: 4,
+                                    fontFamily: "monospace",
+                                  }}
+                                >
+                                  {evt.metadata?.email}
+                                </span>
+                              )}
                               {evt.sender_name && (
                                 <span style={{ color: C.muted, fontSize: 12 }}>({evt.sender_name})</span>
                               )}
                             </div>
                             {syncedTime && (
-                              <span style={{ fontSize: 11, color: C.faint }}>
+                              <span style={{ fontSize: 11, color: C.faint, display: "inline-flex", alignItems: "center", gap: 3.5 }}>
+                                <Clock size={11} color={C.faint} />
                                 Disinkronkan: {formatWibDate(syncedTime)}
                               </span>
                             )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => copyPhone(evt.phone_number)}
-                            style={{
-                              background: "none",
-                              border: `1px solid ${C.line}`,
-                              borderRadius: 4,
-                              padding: "4px 8px",
-                              fontSize: 11,
-                              color: copiedPhone === evt.phone_number ? C.moss : C.muted,
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                            }}
-                          >
-                            {copiedPhone === evt.phone_number ? <Check size={11} /> : <Copy size={11} />}
-                            <span>{copiedPhone === evt.phone_number ? "Tersalin" : "Salin"}</span>
-                          </button>
+                          {hasPhone && (
+                            <button
+                              type="button"
+                              onClick={() => copyPhone(evt.phone_number)}
+                              style={{
+                                background: "none",
+                                border: `1px solid ${C.line}`,
+                                borderRadius: 4,
+                                padding: "4px 8px",
+                                fontSize: 11,
+                                color: copiedPhone === evt.phone_number ? C.moss : C.muted,
+                                cursor: "pointer",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                              }}
+                            >
+                              {copiedPhone === evt.phone_number ? <Check size={11} /> : <Copy size={11} />}
+                              <span>{copiedPhone === evt.phone_number ? "Tersalin" : "Salin"}</span>
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -2565,29 +2981,57 @@ create policy "owners delete own track_events" on track_events for delete using 
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 8,
                 }}
               >
-                <button
-                  type="button"
-                  disabled={uniquePhonesList.length === 0}
-                  onClick={handleCopyAllNumbers}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "7px 12px",
-                    background: "#FFFFFF",
-                    border: `1px solid ${C.line}`,
-                    borderRadius: 6,
-                    fontSize: 12.5,
-                    fontWeight: 600,
-                    color: copiedAudienceNumbers ? C.moss : C.ink,
-                    cursor: uniquePhonesList.length === 0 ? "not-allowed" : "pointer",
-                  }}
-                >
-                  {copiedAudienceNumbers ? <Check size={13} /> : <Copy size={13} />}
-                  <span>{copiedAudienceNumbers ? "Semua Nomor Tersalin!" : `Salin Semua (${uniquePhonesList.length} Nomor)`}</span>
-                </button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    disabled={uniquePhonesList.length === 0}
+                    onClick={handleCopyAllNumbers}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      background: "#FFFFFF",
+                      border: `1px solid ${C.line}`,
+                      borderRadius: 6,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: copiedAudienceNumbers ? C.moss : C.ink,
+                      cursor: uniquePhonesList.length === 0 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {copiedAudienceNumbers ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedAudienceNumbers ? "Nomor Tersalin!" : `Salin WA (${uniquePhonesList.length})`}</span>
+                  </button>
+
+                  {uniqueEmailsList.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={uniqueEmailsList.length === 0}
+                      onClick={handleCopyAllEmails}
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        padding: "7px 12px",
+                        background: "#FFFFFF",
+                        border: `1px solid ${C.line}`,
+                        borderRadius: 6,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: copiedAudienceEmails ? "#6D28D9" : C.ink,
+                        cursor: uniqueEmailsList.length === 0 ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {copiedAudienceEmails ? <Check size={13} /> : <Copy size={13} />}
+                      <span>{copiedAudienceEmails ? "Email Tersalin!" : `Salin Email (${uniqueEmailsList.length})`}</span>
+                    </button>
+                  )}
+                </div>
 
                 <button
                   type="button"
@@ -2610,6 +3054,394 @@ create policy "owners delete own track_events" on track_events for delete using 
           </div>
         );
       })()}
+
+      {/* Modal: Import Excel Contacts */}
+      {showImportModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(34,31,25,0.5)",
+            zIndex: 65,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+          onClick={() => {
+            if (!isImporting) setShowImportModal(false);
+          }}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 10,
+              maxWidth: 540,
+              width: "100%",
+              boxShadow: "0 16px 40px rgba(0,0,0,0.22)",
+              border: `1px solid ${C.line}`,
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: "18px 22px",
+                borderBottom: `1px solid ${C.line}`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                background: "#F8FAFC",
+              }}
+            >
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#166534", textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.05em" }}>
+                  <FileSpreadsheet size={14} />
+                  Import Data Excel
+                </div>
+                <h3 style={{ fontSize: 17, fontWeight: 700, margin: "4px 0 0", color: C.ink }}>
+                  Import Kontak ke Track Event
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  if (!isImporting) setShowImportModal(false);
+                }}
+                disabled={isImporting}
+                style={{ background: "transparent", border: "none", cursor: isImporting ? "not-allowed" : "pointer", padding: 0 }}
+              >
+                <X size={18} color={C.muted} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: "20px 22px", maxHeight: "75vh", overflowY: "auto" }}>
+              {/* Step 1: Radio Selection */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+                  1. Pilih Kolom Kontak yang Wajib Diisi:
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <label
+                    style={{
+                      border: `1.5px solid ${importType === "whatsapp" ? "#166534" : C.line}`,
+                      background: importType === "whatsapp" ? "#F0FDF4" : "#FFFFFF",
+                      borderRadius: 8,
+                      padding: "12px 14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      transition: "all .15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="importType"
+                        checked={importType === "whatsapp"}
+                        onChange={() => {
+                          setImportType("whatsapp");
+                          setImportResult(null);
+                        }}
+                        style={{ accentColor: "#166534", cursor: "pointer" }}
+                      />
+                      <strong style={{ fontSize: 13, color: importType === "whatsapp" ? "#166534" : C.ink }}>
+                        Nomor WhatsApp
+                      </strong>
+                    </div>
+                    <span style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.35, paddingLeft: 24 }}>
+                      <strong style={{ color: "#166534" }}>Wajib:</strong> No WhatsApp. Kolom Email, Nama, Pesan dll boleh kosong.
+                    </span>
+                  </label>
+
+                  <label
+                    style={{
+                      border: `1.5px solid ${importType === "email" ? "#2563EB" : C.line}`,
+                      background: importType === "email" ? "#EFF6FF" : "#FFFFFF",
+                      borderRadius: 8,
+                      padding: "12px 14px",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 4,
+                      transition: "all .15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="radio"
+                        name="importType"
+                        checked={importType === "email"}
+                        onChange={() => {
+                          setImportType("email");
+                          setImportResult(null);
+                        }}
+                        style={{ accentColor: "#2563EB", cursor: "pointer" }}
+                      />
+                      <strong style={{ fontSize: 13, color: importType === "email" ? "#1D4ED8" : C.ink }}>
+                        Alamat Email
+                      </strong>
+                    </div>
+                    <span style={{ fontSize: 11.5, color: C.muted, lineHeight: 1.35, paddingLeft: 24 }}>
+                      <strong style={{ color: "#1D4ED8" }}>Wajib:</strong> Email. Kolom No WhatsApp, Nama, Pesan dll boleh kosong.
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Step 2: Download Template */}
+              <div
+                style={{
+                  background: "#F8FAFC",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 8,
+                  padding: "12px 16px",
+                  marginBottom: 18,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: C.ink }}>
+                    Format File Excel (Template Resmi)
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>
+                    Gunakan template ini agar nama kolom dan urutan data terbaca akurat.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadTemplate(importType)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    background: "#FFFFFF",
+                    color: importType === "whatsapp" ? "#166534" : "#1D4ED8",
+                    border: `1px solid ${importType === "whatsapp" ? "rgba(22,101,52,0.4)" : "rgba(37,99,235,0.4)"}`,
+                    borderRadius: 6,
+                    padding: "6px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
+                  }}
+                >
+                  <Download size={13} />
+                  Unduh Format Excel ({importType === "whatsapp" ? "No WA" : "Email"})
+                </button>
+              </div>
+
+              {/* Step 3: File Upload Area */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 700, color: C.ink, marginBottom: 8 }}>
+                  2. Unggah File Excel (.xlsx / .xls / .csv):
+                </label>
+                <div
+                  style={{
+                    border: `2px dashed ${importFile ? "#166534" : C.line}`,
+                    borderRadius: 8,
+                    padding: "24px 16px",
+                    textAlign: "center",
+                    background: importFile ? "#F0FDF4" : "#FAFAFA",
+                    cursor: "pointer",
+                    position: "relative",
+                  }}
+                  onClick={() => document.getElementById("excelFileInput")?.click()}
+                >
+                  <input
+                    id="excelFileInput"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        setImportFile(e.target.files[0]);
+                        setImportResult(null);
+                      }
+                    }}
+                  />
+                  {importFile ? (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      <FileSpreadsheet size={32} color="#166534" />
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: "#166534" }}>
+                        {importFile.name}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.muted }}>
+                        {(importFile.size / 1024).toFixed(1)} KB — Klik untuk ganti file
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                      <Upload size={28} color={C.faint} />
+                      <div style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>
+                        Klik untuk memilih file Excel (.xlsx / .xls / .csv)
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.muted }}>
+                        Atau drag & drop file ke area ini
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Info Deduplication Note */}
+              <div
+                style={{
+                  background: "#F8FAFC",
+                  border: `1px solid ${C.line}`,
+                  borderRadius: 6,
+                  padding: "9px 12px",
+                  fontSize: 12,
+                  color: C.muted,
+                  marginBottom: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <Info size={15} color={C.faint} style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Pencegahan Duplikat:</strong> Jika nomor WhatsApp atau email sudah terdaftar di sistem, data tersebut tidak akan disimpan ulang (hanya data baru yang tersimpan).
+                </span>
+              </div>
+
+              {/* Import Results Banner if any */}
+              {importResult && (
+                <div
+                  style={{
+                    borderRadius: 8,
+                    padding: "14px 16px",
+                    background: importResult.importedCount > 0 ? "#F0FDF4" : "#FEF2F2",
+                    border: `1px solid ${importResult.importedCount > 0 ? "#BBF7D0" : "#FECACA"}`,
+                    marginBottom: 16,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <CheckCircle2 size={16} color={importResult.importedCount > 0 ? "#166534" : "#DC2626"} />
+                    <strong style={{ fontSize: 13, color: importResult.importedCount > 0 ? "#166534" : "#991B1B" }}>
+                      Hasil Import: {importResult.importedCount} data baru berhasil disimpan
+                    </strong>
+                  </div>
+
+                  {(importResult.duplicateCount || 0) > 0 && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#92400E", display: "flex", alignItems: "flex-start", gap: 6 }}>
+                      <span>ℹ️</span>
+                      <span>
+                        <strong>{importResult.duplicateCount} data duplikat dilewati:</strong> Nomor WhatsApp atau email sudah pernah terdaftar sehingga tidak disimpan ulang.
+                      </span>
+                    </div>
+                  )}
+
+                  {importResult.skippedCount > (importResult.duplicateCount || 0) && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#B45309" }}>
+                      ⚠️ {importResult.skippedCount - (importResult.duplicateCount || 0)} baris dilewati karena kolom wajib kosong atau format tidak sesuai.
+                    </div>
+                  )}
+
+                  {importResult.skippedRows && importResult.skippedRows.length > 0 && (
+                    <div style={{ marginTop: 8, borderTop: "1px dashed rgba(0,0,0,0.1)", paddingTop: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase" }}>
+                        Rincian Baris Dilewati:
+                      </span>
+                      <ul style={{ margin: "4px 0 0 16px", padding: 0, fontSize: 11.5, color: C.muted }}>
+                        {importResult.skippedRows.slice(0, 5).map((sr, idx) => (
+                          <li key={idx}>Baris {sr.row}: {sr.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div
+              style={{
+                padding: "14px 22px",
+                background: "#F8FAFC",
+                borderTop: `1px solid ${C.line}`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => handleDownloadTemplate(importType)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: C.muted,
+                  fontSize: 12,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                <Download size={12} />
+                Unduh Format Kosong
+              </button>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowImportModal(false)}
+                  disabled={isImporting}
+                  style={{
+                    padding: "8px 16px",
+                    background: "transparent",
+                    border: `1px solid ${C.line}`,
+                    borderRadius: 6,
+                    fontSize: 13,
+                    color: C.ink,
+                    cursor: isImporting ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Tutup
+                </button>
+                <button
+                  type="button"
+                  onClick={handleImportExcel}
+                  disabled={!importFile || isImporting}
+                  style={{
+                    padding: "8px 18px",
+                    background: !importFile || isImporting ? C.paper : (importType === "whatsapp" ? "#166534" : "#1D4ED8"),
+                    color: !importFile || isImporting ? C.faint : "#FFFFFF",
+                    border: "none",
+                    borderRadius: 6,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: !importFile || isImporting ? "not-allowed" : "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {isImporting ? (
+                    <>
+                      <Loader2 size={14} className="spin" />
+                      Mengimpor Excel...
+                    </>
+                  ) : (
+                    <>
+                      <Upload size={14} />
+                      Mulai Import Data
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Global Action Toast Notification */}
       {toast && (
