@@ -158,8 +158,46 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // 6. Persist to track_events table via Supabase Admin (bypasses RLS)
+  // 6. Check if phone number already exists for this site (only save new numbers)
   const supabase = getSupabaseAdmin();
+
+  const phoneVariations = [cleanPhone];
+  if (cleanPhone.startsWith('628')) {
+    phoneVariations.push('08' + cleanPhone.slice(3));
+    phoneVariations.push('+' + cleanPhone);
+  } else if (cleanPhone.startsWith('08')) {
+    phoneVariations.push('628' + cleanPhone.slice(2));
+    phoneVariations.push('+628' + cleanPhone.slice(2));
+  }
+  if (rawSender && !phoneVariations.includes(rawSender)) {
+    phoneVariations.push(rawSender);
+  }
+
+  const { data: existingEvent } = await supabase
+    .from('track_events')
+    .select('id, phone_number, sender_name, created_at')
+    .eq('site_id', siteId)
+    .in('phone_number', phoneVariations)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingEvent) {
+    console.log(
+      `[fonnte webhook] Nomor ${cleanPhone} sudah ada di site ${siteId} (ID: ${existingEvent.id}). Melewati penyimpanan data baru.`
+    );
+    return NextResponse.json(
+      {
+        status: true,
+        message: 'Nomor WhatsApp sudah ada sebelumnya, tidak disimpan ulang (hanya simpan nomor baru)',
+        skipped: true,
+        phone_number: cleanPhone,
+        existing_event_id: existingEvent.id,
+      },
+      { status: 200, headers: corsHeaders() }
+    );
+  }
+
+  // 7. Persist to track_events table via Supabase Admin (bypasses RLS)
   const nowIso = new Date().toISOString();
 
   const eventPayload = {
